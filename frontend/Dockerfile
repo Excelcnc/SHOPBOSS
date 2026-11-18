@@ -4,6 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ARG VITE_ENTRA_CLIENT_ID=""
+ARG VITE_ENTRA_TENANT_ID=""
 RUN npm run build
 
 FROM nginx:1.27-alpine

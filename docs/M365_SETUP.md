@@ -55,5 +55,18 @@ Estimators can also simply forward RFQs to the quoting mailbox.
 4. `.env`: `AUTH_MODE=entra`, `ENTRA_TENANT_ID=<tenant id or "organizations">`, `ENTRA_CLIENT_ID=<client id>`;
    frontend build arg `VITE_ENTRA_CLIENT_ID=<client id>`.
 
-> The frontend sign-in (MSAL) hook is stubbed in `frontend/src/auth.ts`; wiring `@azure/msal-browser`
-> into it is the first item in docs/ROADMAP.md. The backend token validation is implemented.
+   Frontend build settings: `VITE_ENTRA_CLIENT_ID=<sign-in app client id>` and `VITE_ENTRA_TENANT_ID=<tenant id>`.
+5. Under **Authentication** for the sign-in app, add these Single-page application redirect URIs:
+   the pilot's address (e.g. `https://quote.excel-cnc.com`) and `http://localhost:5173` for local testing.
+
+## 3. Check it
+
+On the server, after filling in `.env`:
+
+```bash
+cd backend
+python -m app.check_m365                        # mailbox access, permission, settings
+python -m app.check_m365 someone.else@yourshop.com   # confirms the app can NOT read other mailboxes
+```
+
+Every line should say OK. It prints message counts only, never message contents.

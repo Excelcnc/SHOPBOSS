@@ -1,7 +1,6 @@
 # Roadmap
 
 ## Next (to put Excel CNC into daily use)
-1. Frontend Microsoft sign-in (`@azure/msal-browser` in `frontend/src/auth.ts`).
 2. Connect the quoting mailbox in your tenant; deploy to Azure Container Apps
    (PostgreSQL Flexible Server, Azure Cache for Redis, Blob storage) with a public HTTPS URL for the Graph webhook.
 3. Calibrate with your JobBOSS² history (docs/ESTIMATING.md) and tune per-feature times.

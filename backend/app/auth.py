@@ -33,8 +33,12 @@ def _verify_entra(token: str) -> dict:
     if s.entra_tenant_id and s.entra_tenant_id not in ("common", "organizations") and tid != s.entra_tenant_id:
         raise HTTPException(401, "Token is from another tenant")
     key = _jwks(tid or "common").get_signing_key_from_jwt(token)
-    return jwt.decode(token, key.key, algorithms=["RS256"], audience=[s.entra_client_id, f"api://{s.entra_client_id}"],
-                      issuer=f"https://login.microsoftonline.com/{tid}/v2.0")
+    claims = jwt.decode(token, key.key, algorithms=["RS256"], audience=[s.entra_client_id, f"api://{s.entra_client_id}"],
+                        options={"verify_iss": False})
+    # v2 tokens: login.microsoftonline.com/<tid>/v2.0 ; v1 tokens: sts.windows.net/<tid>/
+    if claims.get("iss") not in (f"https://login.microsoftonline.com/{tid}/v2.0", f"https://sts.windows.net/{tid}/"):
+        raise jwt.InvalidIssuerError("Unexpected token issuer")
+    return claims
 
 
 def _shop_for_tenant(db: Session, tenant_key: str, name: str) -> Shop:

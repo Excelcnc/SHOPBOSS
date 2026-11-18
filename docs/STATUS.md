@@ -19,7 +19,8 @@
 - **Microsoft 365 mailbox intake** (Graph webhook, subscription renewal, delta sync). Unit-tested
   handshake only; needs your tenant (docs/M365_SETUP.md).
 - **IMAP intake** for a forwarding address.
-- **Microsoft sign-in**: backend token validation done; frontend MSAL wiring pending.
+- **Microsoft sign-in**: sign-in screen (MSAL) and server token validation (v1 and v2 tokens) done; needs the sign-in app's client ID to test.
+- **Setup check**: `python -m app.check_m365` verifies the mailbox app, permission, access policy and settings.
 - **AI extraction** (Claude): email fields and drawing reading incl. scanned drawings, with
   confidence and locations. Needs `ANTHROPIC_API_KEY`. Not exercised against the live API in tests.
   RFQs with export-control wording (ITAR/EAR) are never sent to the AI.
