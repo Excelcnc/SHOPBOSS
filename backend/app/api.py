@@ -196,7 +196,7 @@ async def create_rfq(files: list[UploadFile] = File(default=[]), customer_name: 
             loose.append((f.filename, data))
     if loose or not created:
         body = notes + (f"\nQuantity: {quantities}" if quantities else "")
-        parsed = ParsedEmail(f"<manual-{datetime.now(timezone.utc).timestamp()}@{user.id}>", customer_name, customer_email, subject or "Manual RFQ",
+        parsed = ParsedEmail(f"<manual-{datetime.now(timezone.utc).timestamp()}@{user.id}>", "", customer_email, subject or "Manual RFQ",
                              body, datetime.now(timezone.utc), loose)
         r = create_rfq_from_email(db, user.shop_id, parsed, "upload")
         if customer_name:
