@@ -96,6 +96,11 @@ DEFAULT_SHOP_SETTINGS = {
     "price_rounding": 0.05,
     "material_price_stale_days": 90,
     "time_calibration_factor": 1.0,   # tuned from historical actual hours
+    # lead time = queue + material arrival + production days + outside processes, rounded up to whole weeks
+    "lead_queue_days": 5,             # working days before the job starts (current backlog)
+    "lead_material_days": 3,          # working days to receive material
+    "lead_hours_per_day": 14.0,       # machine hours per working day a single job typically gets
+    "lead_outside_buffer_days": 2,    # shipping to/from outside processors
     "volume_tiers": [                 # discount on machining + setup + programming only
         {"min_qty": 1, "discount_pct": 0.0},
         {"min_qty": 25, "discount_pct": 3.0},

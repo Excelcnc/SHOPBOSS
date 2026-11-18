@@ -273,7 +273,7 @@ def estimate(inputs: dict, overrides: dict | None = None) -> dict:
         key = "process." + p["name"]
         per_part = c.val(key + ".per_part", round(per_part * (1 + p.get("markup_pct", 15) / 100), 2), p["name"] + " per part", "$", "outside", p.get("source", ""))
         lot = c.val(key + ".lot_charge", round(float(p.get("lot_charge", 0)) * (1 + p.get("markup_pct", 15) / 100), 2), p["name"] + " lot charge", "$", "outside")
-        procs.append({"name": p["name"], "per_part": per_part, "lot": lot, "unpriced": p.get("unpriced", False)})
+        procs.append({"name": p["name"], "per_part": per_part, "lot": lot, "unpriced": p.get("unpriced", False), "lead_days": int(p.get("lead_days") or 5)})
         if p.get("unpriced"):
             c.warnings.append(f"Outside process '{p['name']}' is not in your supplier list: priced at a conservative placeholder. Enter the real price.")
     purch = []
@@ -313,7 +313,12 @@ def estimate(inputs: dict, overrides: dict | None = None) -> dict:
         unit = c.val(f"price.unit.{q}", round(unit, 2) if has_geo else 0.0, f"Unit price at qty {q}", "$", "price")
         if not has_geo and not (overrides or {}).get(f"price.unit.{q}"):
             unit = None
-        breaks.append({"qty": q, "material": round(mat_cost, 2), "machining": round(machining, 2), "inspection": round(inspection, 2),
+        prod_days = math.ceil((setup_hr + prog_hr * 0.5 + q * (cycle + insp) / 60) / max(1.0, S["lead_hours_per_day"]))
+        outside_days = sum(p["lead_days"] for p in procs) + (S["lead_outside_buffer_days"] if procs else 0)
+        lead_days = S["lead_queue_days"] + S["lead_material_days"] + prod_days + outside_days
+        lead_weeks = c.val(f"lead.weeks.{q}", int(math.ceil(lead_days / 5)), f"Lead time at qty {q}", "weeks", "lead",
+                           f"{S['lead_queue_days']} queue + {S['lead_material_days']} material + {prod_days} production + {outside_days} outside processes = {lead_days} working days")
+        breaks.append({"qty": q, "lead_weeks": lead_weeks, "lead_days": lead_days, "material": round(mat_cost, 2), "machining": round(machining, 2), "inspection": round(inspection, 2),
                        "setup_programming_per_part": round(one_off / q, 2), "outside": round(outside, 2), "purchased": round(purchased, 2),
                        "volume_discount_pct": disc, "subtotal": round(subtotal, 2), "contingency": round(subtotal * cont / 100, 2),
                        "unit_price": unit, "extended": round(unit * q, 2) if unit is not None else None, "hours_per_part": round((cycle + insp) / 60, 3)})

@@ -59,6 +59,6 @@ def shop_catalog(db: Session, shop_id: str) -> dict:
     rates = {r.key: r.rate_per_hour for r in db.scalars(select(RateType).where(RateType.shop_id == shop_id))}
     machines = [{"name": m.name, "kind": m.kind, "rate_key": m.rate_key, "travel_mm": m.travel_mm, "active": m.active, "capabilities": m.capabilities}
                 for m in db.scalars(select(Machine).where(Machine.shop_id == shop_id))]
-    procs = [{"name": p.name, "keywords": p.keywords, "basis": p.basis, "price": p.price, "lot_charge": p.lot_charge, "markup_pct": p.markup_pct, "supplier": p.supplier}
+    procs = [{"name": p.name, "keywords": p.keywords, "basis": p.basis, "price": p.price, "lot_charge": p.lot_charge, "markup_pct": p.markup_pct, "supplier": p.supplier, "lead_days": p.lead_days}
              for p in db.scalars(select(OutsideProcess).where(OutsideProcess.shop_id == shop_id))]
     return {"settings": settings, "materials": mats, "rates": rates, "machines": machines, "processes": procs, "currency": shop.currency}

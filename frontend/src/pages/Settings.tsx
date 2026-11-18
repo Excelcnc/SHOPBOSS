@@ -8,7 +8,8 @@ const KINDS = [["mill3", "3-axis mill"], ["mill4", "4-axis mill"], ["mill5", "5-
 const POLICY: [string, string, string][] = [["margin_pct", "Margin", "%"], ["contingency_pct", "Contingency (always applied)", "%"], ["uncertainty_pct_per_item", "Extra time per uncertain item", "%"],
   ["uncertainty_cap_pct", "Uncertainty cap", "%"], ["material_scrap_pct", "Material scrap / kerf", "%"], ["stock_allowance_mm", "Stock allowance per side (milling)", "mm"],
   ["min_order_charge", "Minimum order charge", "$"], ["setup_hours_per_setup", "Setup hours per setup", "h"], ["programming_base_hours", "Programming base", "h"],
-  ["first_article_hours", "First-article inspection per lot", "h"], ["time_calibration_factor", "Time calibration factor", "×"], ["material_price_stale_days", "Warn when material price older than", "days"]];
+  ["first_article_hours", "First-article inspection per lot", "h"], ["time_calibration_factor", "Time calibration factor", "×"], ["lead_queue_days", "Lead time: queue before start", "days"], ["lead_material_days", "Lead time: material arrival", "days"],
+  ["lead_hours_per_day", "Lead time: machine hours per day for one job", "h"], ["lead_outside_buffer_days", "Lead time: shipping to outside processors", "days"], ["material_price_stale_days", "Warn when material price older than", "days"]];
 
 export default function Settings() {
   const me = useMe();

@@ -40,7 +40,7 @@ export default function Rfq() {
           <section className="card">
             <div className="flex items-center border-b border-steel-200 px-4 py-3"><h2 className="font-semibold">Parts to quote</h2><span className="ml-2 text-sm text-steel-500">{machined.filter((p: any) => p.kind === "machined").length} machined{machined.some((p: any) => p.kind === "purchased") && `, ${machined.filter((p: any) => p.kind === "purchased").length} purchased`}</span></div>
             {asm.map((a: any) => <div key={a.id} className="flex items-center gap-2 border-b border-steel-100 bg-steel-50 px-4 py-2 text-sm"><Package size={15} className="text-navy-700" /> Assembly <b>{a.part_number}</b>
-              <span className="text-steel-500">— quantities below are per assembly × assemblies requested</span></div>)}
+              {a.revision && <Badge>Rev {a.revision}</Badge>}<span className="text-steel-500">— {a.drawing_attachment_id ? "make/buy and quantities from the drawing parts list" : "quantities from the 3D model"}; prices below are for assemblies requested × qty per assembly</span></div>)}
             <ul>
               {machined.map((p: any) => {
                 const v = p.versions?.[0]; const b = v?.breaks || [];
@@ -50,6 +50,7 @@ export default function Rfq() {
                       <span className="grid h-10 w-10 flex-none place-items-center rounded-md bg-steel-100 text-steel-500">{p.kind === "purchased" ? <ShoppingCart size={18} /> : p.has_mesh ? <Box size={18} /> : <FileText size={18} />}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{p.part_number || "Unnamed"}</span>{p.revision && <Badge>Rev {p.revision}</Badge>}
+                          {p.match?.bom_item && <Badge title="Item number on the drawing parts list">Item {p.match.bom_item}</Badge>}
                           {p.kind === "purchased" && <Badge tone="gray">Purchased × {p.qty_per_parent}</Badge>}
                           {p.parent_part_id && p.kind === "machined" && p.qty_per_parent > 1 && <Badge>× {p.qty_per_parent} per assembly</Badge>}
                           {p.material_code && <Badge tone="blue">{p.material_code}</Badge>}</div>
@@ -58,6 +59,10 @@ export default function Rfq() {
                         {p.warnings?.length > 0 && <div className="mt-1 flex items-start gap-1 text-xs text-amber-800"><AlertTriangle size={12} className="mt-0.5 flex-none" />{p.warnings[0]}{p.warnings.length > 1 && ` (+${p.warnings.length - 1} more)`}</div>}
                       </div>
                       {p.kind === "machined" && <div className="text-right text-sm">{b.map((x: any) => <div key={x.qty} className="num"><span className="text-steel-500">{x.qty} ×</span> {x.unit_price == null ? <Badge tone="amber">needs input</Badge> : money(x.unit_price, cur)}</div>)}</div>}
+                      {p.kind === "purchased" && <div className="text-right text-xs" onClick={(e) => e.preventDefault()}>
+                        <div className="mb-0.5 text-steel-500">{p.purchased?.vendor || p.purchased?.reason}</div>
+                        <label className="inline-flex items-center gap-1">Cost each <input className="input !w-20 !py-0.5 text-right font-mono" defaultValue={p.purchased?.unit_cost || ""} placeholder="0.00"
+                          onBlur={async (e) => { await api.patch(`/parts/${p.id}`, { purchased: { ...p.purchased, unit_cost: +e.target.value || 0 } }); toast("Saved"); }} /></label></div>}
                       {p.kind === "machined" && <ChevronRight size={16} className="text-steel-400" />}
                     </Link>
                   </li>

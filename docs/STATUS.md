@@ -4,13 +4,15 @@
 
 - Upload intake: `.eml`, Outlook `.msg`, loose files, ZIP archives; RFQ field extraction with confidence.
 - STEP analysis incl. assemblies/BOM; feature recognition listed in the README; 3D viewer.
+- Parts lists (BOM) read from assembly PDF drawings (ruled or aligned tables): item, qty, part number, description, material, vendor, make/buy. The drawing governs quantities and make/buy; differences from the 3D model are flagged; items only on the drawing (washers, labels) are added.
+- Lead time per quantity (queue + material + production + outside processes, in weeks), editable on the customer quote and printed on the PDF.
 - PDF and DXF drawing extraction with locations; scans are detected as "no text layer".
 - Model ↔ drawing pairing, revision-conflict and material-conflict warnings.
 - Cost engine, overrides, Save As variants, locked final versions, quote PDF.
 - Shop configuration: rates, machines, material prices, outside processes, pricing policy.
 - History CSV import, similar-job search, won/lost feedback into history, calibration report.
 - Multi-shop data isolation (shop per sign-in tenant).
-- 19 automated backend tests (`cd backend && pytest`), plus a browser walkthrough of all screens.
+- 22 automated backend tests (`cd backend && pytest`), plus a browser walkthrough of all screens.
 
 ## Implemented, needs your configuration to verify
 

@@ -5,7 +5,7 @@ import { api, money } from "../api";
 import { Badge, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
 
-type Line = { part_id: string; part_number: string; revision: string; version_id: string; qty: number; include: boolean };
+type Line = { part_id: string; part_number: string; revision: string; version_id: string; qty: number; include: boolean; lead_time: string };
 
 export default function QuoteBuilder() {
   const { id } = useParams();
@@ -13,7 +13,7 @@ export default function QuoteBuilder() {
   const cur = me?.shop?.currency || "USD";
   const r = useAsync(() => api.get(`/rfqs/${id}`), [id]);
   const [lines, setLines] = useState<Line[]>([]);
-  const [notes, setNotes] = useState("Prices in " + cur + ", per part, ex-works. Lead time to be confirmed at order.");
+  const [notes, setNotes] = useState("Prices in " + cur + ", per part, ex-works. Lead times are from receipt of order (ARO) and confirmed at order.");
   const [days, setDays] = useState(30);
   const [out, setOut] = useState<any>(null);
   useEffect(() => {
@@ -21,7 +21,7 @@ export default function QuoteBuilder() {
     const ls: Line[] = [];
     for (const p of r.data.parts.filter((x: any) => x.kind === "machined" && x.versions?.length)) {
       const v = p.versions[0];
-      for (const b of v.breaks) ls.push({ part_id: p.id, part_number: p.part_number, revision: p.revision, version_id: v.id, qty: b.qty, include: true });
+      for (const b of v.breaks) ls.push({ part_id: p.id, part_number: p.part_number, revision: p.revision, version_id: v.id, qty: b.qty, include: true, lead_time: b.lead_weeks ? `${b.lead_weeks} weeks ARO` : "" });
     }
     setLines(ls);
   }, [r.data]);
@@ -32,7 +32,7 @@ export default function QuoteBuilder() {
   const missing = included.filter((l) => priceOf(l) == null);
   const finalize = async () => {
     try {
-      const o = await api.post(`/rfqs/${id}/finalize`, { lines: included.map((l) => ({ version_id: l.version_id, qty: l.qty })), valid_days: days, notes });
+      const o = await api.post(`/rfqs/${id}/finalize`, { lines: included.map((l) => ({ version_id: l.version_id, qty: l.qty, lead_time: l.lead_time })), valid_days: days, notes });
       setOut(o); toast(`Quote ${o.quote_number} created`); r.reload();
     } catch (e: any) { toast(e.message); }
   };
@@ -40,9 +40,9 @@ export default function QuoteBuilder() {
     <div className="mx-auto max-w-5xl px-6 py-6">
       <Link to={`/rfq/${id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {r.data.number}</Link>
       <h1 className="mb-1 text-xl font-semibold">Customer quote</h1>
-      <p className="mb-5 text-sm text-steel-500">The customer sees only part number, revision, quantity and price per part. Choose which variant and quantities to include.</p>
+      <p className="mb-5 text-sm text-steel-500">The customer sees only part number, revision, quantity, price per part and lead time. Choose which variant and quantities to include.</p>
       <div className="card mb-5 overflow-x-auto">
-        <table className="w-full"><thead><tr><th className="th w-10"></th><th className="th">Part number</th><th className="th">Rev</th><th className="th">Variant</th><th className="th text-right">Qty</th><th className="th text-right">Price per part</th><th className="th text-right">Extended</th></tr></thead>
+        <table className="w-full"><thead><tr><th className="th w-10"></th><th className="th">Part number</th><th className="th">Rev</th><th className="th">Variant</th><th className="th text-right">Qty</th><th className="th text-right">Price per part</th><th className="th text-right">Extended</th><th className="th">Lead time</th></tr></thead>
           <tbody>{lines.map((l, i) => { const p = parts.find((x: any) => x.id === l.part_id); const price = priceOf(l);
             return <tr key={i} className={l.include ? "" : "opacity-50"}>
               <td className="td"><input type="checkbox" checked={l.include} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, include: e.target.checked } : x)))} aria-label="Include line" /></td>
@@ -50,11 +50,13 @@ export default function QuoteBuilder() {
               <td className="td"><select className="input !w-auto !py-0.5 text-xs" value={l.version_id} onChange={(e) => {
                 const v = p.versions.find((x: any) => x.id === e.target.value);
                 const keep = v.breaks.some((b: any) => b.qty === l.qty) ? l.qty : v.breaks[0].qty;
-                setLines(lines.map((x, j) => (j === i ? { ...x, version_id: v.id, qty: keep } : x)));
+                const lw = v.breaks.find((b: any) => b.qty === keep)?.lead_weeks;
+                setLines(lines.map((x, j) => (j === i ? { ...x, version_id: v.id, qty: keep, lead_time: lw ? `${lw} weeks ARO` : x.lead_time } : x)));
               }}>{p.versions.map((v: any) => <option key={v.id} value={v.id}>v{v.number} · {v.label}</option>)}</select></td>
               <td className="td num text-right">{l.qty.toLocaleString()}</td>
               <td className="td num text-right font-semibold">{price == null ? <Badge tone="amber">needs input</Badge> : money(price, cur)}</td>
-              <td className="td num text-right">{price == null ? "—" : money(price * l.qty, cur)}</td></tr>; })}</tbody></table>
+              <td className="td num text-right">{price == null ? "—" : money(price * l.qty, cur)}</td>
+              <td className="td"><input className="input !w-40 !py-0.5 text-xs" value={l.lead_time} aria-label="Lead time" onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, lead_time: e.target.value } : x)))} /></td></tr>; })}</tbody></table>
         {!lines.length && <p className="p-6 text-sm text-steel-500">No priced parts yet.</p>}
       </div>
       <div className="mb-5 grid gap-4 md:grid-cols-[1fr_160px]">

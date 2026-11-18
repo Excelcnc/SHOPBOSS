@@ -81,7 +81,8 @@ def finalize(db: Session, rfq: Rfq, lines: list[dict], valid_days: int, notes: s
         if br["unit_price"] is None:
             raise ValueError(f"Part {v.inputs.get('part', {}).get('part_number')} is not priced yet (missing geometry).")
         part = v.inputs.get("part", {})
-        out_lines.append({"part_number": part.get("part_number", ""), "revision": part.get("revision", ""), "qty": qty,
+        lt = ln.get("lead_time") or f"{br.get('lead_weeks', '?')} weeks ARO"
+        out_lines.append({"part_number": part.get("part_number", ""), "revision": part.get("revision", ""), "qty": qty, "lead_time": lt,
                           "unit_price": br["unit_price"], "extended": round(br["unit_price"] * qty, 2), "version_id": v.id,
                           "description": ln.get("description", "")})
         v.status = "final"
@@ -107,12 +108,12 @@ def render_pdf(shop: Shop, rfq: Rfq, out: QuoteOutput) -> bytes:
            Paragraph(f"Date: {date.today():%d %b %Y} &nbsp;&nbsp; Valid until: {out.valid_until}", st["Normal"]),
            Paragraph(f"Customer: {rfq.customer_name or ''} &nbsp;&nbsp; Attn: {rfq.customer_contact or ''}", st["Normal"]),
            Paragraph(f"Your reference: {rfq.customer_rfq_no or rfq.number}", st["Normal"]), Spacer(1, 16)]
-    data = [["Part number", "Rev", "Qty", "Price per part", "Extended"]]
+    data = [["Part number", "Rev", "Qty", "Price per part", "Extended", "Lead time"]]
     for ln in out.lines:
-        data.append([ln["part_number"], ln["revision"] or "-", f"{ln['qty']:,}", money(ln["unit_price"]), money(ln["extended"])])
-    t = Table(data, colWidths=[2.3 * inch, 0.6 * inch, 0.8 * inch, 1.4 * inch, 1.4 * inch])
+        data.append([ln["part_number"], ln["revision"] or "-", f"{ln['qty']:,}", money(ln["unit_price"]), money(ln["extended"]), ln.get("lead_time", "")])
+    t = Table(data, colWidths=[1.9 * inch, 0.5 * inch, 0.7 * inch, 1.2 * inch, 1.3 * inch, 1.3 * inch])
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#14325c")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                           ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+                           ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("ALIGN", (2, 0), (4, -1), "RIGHT"),
                            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c8cfd8")), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f4f6f9")]),
                            ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     els += [t, Spacer(1, 14)]

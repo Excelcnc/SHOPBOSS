@@ -84,3 +84,35 @@ def test_assembly_rfq(client, samples):
     assert [v for k, v in kinds.items() if "4762" in k][0] == ("purchased", 4)
     brk = next(p for p in rfq["parts"] if p["part_number"] == "BRK-20417")
     assert brk["drawing_attachment_id"] and brk["versions"][0]["breaks"][0]["qty"] == 20
+
+
+def test_assembly_with_parts_list_drawing(client, samples):
+    created = upload(client, samples, ["SENSOR-MOUNT-ASSY-100.step", "SENSOR-MOUNT-ASSY-100_RevA.pdf", "BRK-20417_RevC.pdf"], quantities="20")
+    rfq = client.get(f"/api/rfqs/{created[0]['id']}").json()
+    assert rfq["analysis_status"] == "done", rfq["analysis_error"]
+    asm = next(p for p in rfq["parts"] if p["kind"] == "assembly")
+    assert asm["drawing_attachment_id"] and asm["revision"] == "A"
+    kids = {p["part_number"]: p for p in rfq["parts"] if p["parent_part_id"] == asm["id"]}
+    # washer and label are only on the drawing parts list
+    assert kids["ISO 7089 M6"]["kind"] == "purchased" and kids["ISO 7089 M6"]["qty_per_parent"] == 4
+    assert kids["LBL-0007"]["kind"] == "purchased"
+    screws = next(p for k, p in kids.items() if "4762" in k)
+    assert screws["kind"] == "purchased" and screws["qty_per_parent"] == 4 and "McMASTER" in screws["purchased"]["vendor"]
+    brk = kids["BRK-20417"]
+    assert brk["kind"] == "machined" and brk["drawing_attachment_id"] and brk["match"]["bom_item"] == "2"
+
+
+def test_lead_time_on_quote(client, samples):
+    created = upload(client, samples, ["BRK-20417_RevC.pdf", "BRK-20417_RevC.step"], quantities="250, 2000")
+    rfq = client.get(f"/api/rfqs/{created[0]['id']}").json()
+    part = next(p for p in rfq["parts"] if p["kind"] == "machined")
+    b = part["versions"][0]["breaks"]
+    assert b[0]["lead_weeks"] >= 2 and b[1]["lead_weeks"] > b[0]["lead_weeks"]  # bigger batch, longer lead time
+    v = part["versions"][0]["id"]
+    out = client.post(f"/api/rfqs/{rfq['id']}/finalize", json={"lines": [{"version_id": v, "qty": 250}, {"version_id": v, "qty": 2000, "lead_time": "8 weeks, 2 releases"}]}).json()
+    assert out["lines"][0]["lead_time"] == f"{b[0]['lead_weeks']} weeks ARO"
+    assert out["lines"][1]["lead_time"] == "8 weeks, 2 releases"
+    pdf = client.get(f"/api/outputs/{out['id']}/pdf").content
+    import fitz
+    text = fitz.open(stream=pdf, filetype="pdf")[0].get_text()
+    assert "Lead time" in text and "8 weeks, 2 releases" in text

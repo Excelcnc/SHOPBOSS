@@ -7,7 +7,7 @@ import Viewer3D from "../components/Viewer3D";
 import DrawingView from "../components/DrawingView";
 import { useMe } from "../App";
 
-const GROUPS: [string, string][] = [["geometry", "Geometry"], ["material", "Material"], ["time", "Time"], ["process", "Process"], ["complexity", "Complexity"], ["rates", "Rates"], ["outside", "Outside processes"], ["purchased", "Purchased"], ["pricing", "Pricing"], ["price", "Final unit price"]];
+const GROUPS: [string, string][] = [["lead", "Lead time"], ["geometry", "Geometry"], ["material", "Material"], ["time", "Time"], ["process", "Process"], ["complexity", "Complexity"], ["rates", "Rates"], ["outside", "Outside processes"], ["purchased", "Purchased"], ["pricing", "Pricing"], ["price", "Final unit price"]];
 const MACHINES = [["mill3", "3-axis mill"], ["mill4", "4-axis mill"], ["mill5", "5-axis mill"], ["lathe", "Lathe"], ["millturn", "Mill-turn"], ["lathe+mill3", "Lathe + 3-axis mill"]];
 
 export default function PartEstimate() {
@@ -121,10 +121,11 @@ export default function PartEstimate() {
                   <Quantities q={v.inputs.quantities} disabled={final} onChange={(quantities) => patch({ quantities })} />
                 </div>
                 <table className="w-full">
-                  <thead><tr><th className="th">Qty</th><th className="th text-right">Price / part</th><th className="th text-right">Extended</th><th className="th text-right">Hrs / part</th></tr></thead>
+                  <thead><tr><th className="th">Qty</th><th className="th text-right">Price / part</th><th className="th text-right">Extended</th><th className="th text-right">Hrs / part</th><th className="th text-right">Lead time</th></tr></thead>
                   <tbody>{R.breaks.map((b: any) => <tr key={b.qty}><td className="td num">{b.qty.toLocaleString()}</td>
                     <td className="td num text-right text-base font-semibold">{b.unit_price == null ? <Badge tone="amber">enter envelope</Badge> : money(b.unit_price, cur)}</td>
-                    <td className="td num text-right">{money(b.extended, cur)}</td><td className="td num text-right text-steel-500">{b.unit_price == null ? "—" : b.hours_per_part.toFixed(2)}</td></tr>)}</tbody>
+                    <td className="td num text-right">{money(b.extended, cur)}</td><td className="td num text-right text-steel-500">{b.unit_price == null ? "—" : b.hours_per_part.toFixed(2)}</td>
+                    <td className="td num text-right" title={R.lines.find((l: any) => l.key === `lead.weeks.${b.qty}`)?.note}>{b.lead_weeks} wk</td></tr>)}</tbody>
                 </table>
                 <Breakdown R={R} cur={cur} />
                 <div className="grid grid-cols-2 gap-3 text-sm">

@@ -104,6 +104,9 @@ def analyze_drawing(att: Attachment, use_ai: bool, ai) -> dict:
     pdf = data if att.ext == "pdf" else image_to_pdf(data)
     res = analyze_pdf(pdf)
     res["filename"] = att.filename
+    if res["has_text"]:
+        from .drawing.bom import extract_bom
+        res["bom"] = extract_bom(pdf)
     if use_ai and ai.available():
         try:
             pngs = [render_page_png(pdf, p) for p in range(1, min(2, res["pages"]) + 1)]
@@ -252,9 +255,12 @@ def _process(db: Session, rfq: Rfq):
     db.flush()
 
     # pair drawings with model parts (greedy by score)
+    asm_drawings = {did: d for did, d in drawings.items() if d.get("bom")}
     pairs = []
     for i, (att, p, _) in enumerate(model_parts):
         for did, d in drawings.items():
+            if did in asm_drawings:
+                continue
             dfile = next(a.filename for a in rfq.attachments if a.id == did)
             sc, why = match_score(p["name"], p.get("size", []), d, dfile)
             if sc > 0:
@@ -268,7 +274,8 @@ def _process(db: Session, rfq: Rfq):
         used_d.add(did)
         matched[i] = (did, sc, why)
     # a single model + single drawing with no evidence: pair, but flag low confidence
-    if len(model_parts) == 1 and len(drawings) == 1 and not matched:
+    single_pair = len(model_parts) == 1 and len(drawings) == 1 and not asm_drawings
+    if single_pair and not matched:
         matched[0] = (next(iter(drawings)), 0.2, ["only model and only drawing in the RFQ (no matching evidence)"])
 
     cat = shop_catalog(db, rfq.shop_id)
@@ -279,12 +286,38 @@ def _process(db: Session, rfq: Rfq):
     email_proc = str(rfq.extracted.get("special_processes", {}).get("value") or "")
 
     asm_part = {}
+    bom_of: dict[str, list] = {}  # assembly part id -> parts-list rows from its drawing
+    free_bom = dict(asm_drawings)
     for att, res in assemblies:
-        ap = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=res["tree"]["name"], kind="assembly", model_attachment_id=att.id,
-                  cad={"tree": res["tree"], "header": res["header"]})
+        name = res["tree"]["name"]
+        did = next((k for k, d in free_bom.items() if _norm_pn((d.get("meta", {}).get("drawing_number") or {}).get("value", "")) in (_norm_pn(name), "") or len(assemblies) == 1), None)
+        d = free_bom.pop(did, None) if did else None
+        meta = (d or {}).get("meta", {})
+        ap = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=name, kind="assembly", model_attachment_id=att.id, drawing_attachment_id=did,
+                  revision=(meta.get("revision") or {}).get("value", ""), description=(meta.get("description") or {}).get("value", ""),
+                  cad={"tree": res["tree"], "header": res["header"]}, drawing=d or {}, warnings=[])
         db.add(ap)
         db.flush()
         asm_part[att.id] = ap
+        if d:
+            bom_of[ap.id] = [dict(r, _used=False) for r in d["bom"]]
+    for did, d in free_bom.items():  # assembly drawing without a STEP assembly
+        meta = d.get("meta", {})
+        att = next(a for a in rfq.attachments if a.id == did)
+        ap = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=(meta.get("drawing_number") or {}).get("value") or att.filename.rsplit(".", 1)[0], kind="assembly",
+                  revision=(meta.get("revision") or {}).get("value", ""), description=(meta.get("description") or {}).get("value", ""),
+                  drawing_attachment_id=did, drawing=d, warnings=["Assembly drawing without a 3D assembly: parts come from the drawing parts list."])
+        db.add(ap)
+        db.flush()
+        bom_of[ap.id] = [dict(r, _used=False) for r in d["bom"]]
+
+    def bom_row(parent_id, name):
+        n = _norm_pn(re.sub(r"[-_ ]\d+$", "", name))
+        for r in bom_of.get(parent_id, []):
+            pn = _norm_pn(r.get("part_number", ""))
+            if pn and n and (pn == n or pn in n or n in pn) and not r["_used"]:
+                return r
+        return None
 
     for i, (att, p, in_asm) in enumerate(model_parts):
         did, sc, why = matched.get(i, (None, 0, []))
@@ -293,18 +326,37 @@ def _process(db: Session, rfq: Rfq):
         pn = (meta.get("drawing_number") or {}).get("value") or re.sub(r"(?i)[_\-\s.]*rev[_\-\s.]*[a-z0-9]{1,2}$", "", p["name"])
         rev = (meta.get("revision") or {}).get("value") or (re.search(r"(?i)rev[_\-\s.]?([a-z0-9]{1,2})$", p["name"]) or [None, ""])[1].upper()
         purchased = bool(p.get("purchased_guess"))
+        row = bom_row(asm_part[att.id].id, p["name"]) if in_asm else None
+        bom_warn = []
+        if row:
+            row["_used"] = True
+            purchased = bool(row["purchased"])  # the drawing parts list governs make/buy
+            if row.get("qty") is not None and row["qty"] != p.get("qty_per_assembly", 1):
+                bom_warn.append(f"Quantity conflict: drawing parts list says {row['qty']}, 3D model has {p.get('qty_per_assembly', 1)}. The drawing governs; confirm with the customer.")
+            if row.get("qty") is not None:
+                p["qty_per_assembly"] = row["qty"]
+            if row.get("part_number"):
+                pn = row["part_number"] if purchased or not d else pn
+        elif in_asm and asm_part[att.id].id in bom_of:
+            bom_warn.append("In the 3D model but not on the drawing parts list. Confirm whether it is supplied.")
         part = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=pn, revision=rev or "",
                     description=(meta.get("description") or {}).get("value", ""), kind="purchased" if purchased else "machined",
                     parent_part_id=asm_part[att.id].id if in_asm else None, qty_per_parent=p.get("qty_per_assembly", 1),
                     model_attachment_id=att.id, drawing_attachment_id=did,
                     match={"score": round(sc, 2), "why": why, "drawing": did}, cad={k: v for k, v in p.items() if k != "mesh"},
                     drawing=d or {}, warnings=[])
+        part.warnings += bom_warn
+        if row:
+            part.description = part.description or row.get("description", "")
+            part.match = {**part.match, "bom_item": row.get("item"), "bom_source": "drawing parts list"}
         if p.get("error"):
             part.warnings.append(p["error"])
         if purchased:
-            part.purchased = {"reason": p.get("purchased_reason", ""), "vendor": "", "unit_cost": 0.0}
+            part.purchased = {"reason": (f"drawing parts list: {row['purchased_reason']}" if row else p.get("purchased_reason", "")),
+                              "vendor": (row or {}).get("vendor") or "", "description": (row or {}).get("description", ""), "unit_cost": 0.0}
         # material
-        texts = [((meta.get("material") or {}).get("value", ""), "drawing title block"), ((d or {}).get("text", ""), "drawing notes"), (email_mat, "email")]
+        texts = [((meta.get("material") or {}).get("value", ""), "drawing title block"), ((d or {}).get("text", ""), "drawing notes"),
+                 ((row or {}).get("material", ""), "drawing parts list"), (email_mat, "email")]
         m = detect_material(texts, cat["materials"]) if not purchased else None
         if purchased:
             pass
@@ -338,11 +390,19 @@ def _process(db: Session, rfq: Rfq):
             create_quote(db, rfq, part, qtys, cat)
     # drawings that matched nothing become drawing-only parts (geometry entered manually)
     for did, d in drawings.items():
-        if did in used_d or (len(model_parts) == 1 and len(drawings) == 1):
+        if did in used_d or did in asm_drawings or single_pair:
             continue
         meta = d.get("meta", {})
         att = next(a for a in rfq.attachments if a.id == did)
-        part = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=(meta.get("drawing_number") or {}).get("value") or att.filename.rsplit(".", 1)[0],
+        dn = (meta.get("drawing_number") or {}).get("value") or att.filename.rsplit(".", 1)[0]
+        parent, prow = None, None
+        for pid in bom_of:
+            prow = bom_row(pid, dn)
+            if prow:
+                parent = pid
+                prow["_used"] = True
+                break
+        part = Part(parent_part_id=parent, qty_per_parent=(prow or {}).get("qty") or 1,shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=(meta.get("drawing_number") or {}).get("value") or att.filename.rsplit(".", 1)[0],
                     revision=(meta.get("revision") or {}).get("value", ""), description=(meta.get("description") or {}).get("value", ""),
                     drawing_attachment_id=did, drawing=d, warnings=["No 3D model: size and features come from the drawing only. Enter stock size and cycle time."])
         texts = [((meta.get("material") or {}).get("value", ""), "drawing title block"), (d.get("text", ""), "drawing notes"), (email_mat, "email")]
@@ -352,7 +412,28 @@ def _process(db: Session, rfq: Rfq):
         part.processes = detect_processes([(d.get("text", ""), "drawing"), (email_proc, "email")], cat["processes"])
         db.add(part)
         db.flush()
-        create_quote(db, rfq, part, sorted(set(email_qty)), cat)
+        create_quote(db, rfq, part, sorted({max(1, q * (part.qty_per_parent or 1)) for q in email_qty}), cat)
+    # parts-list rows with no model and no drawing (hardware, labels, or machined parts not supplied)
+    for pid, rows in bom_of.items():
+        for r in rows:
+            if r["_used"]:
+                continue
+            r["_used"] = True
+            part = Part(shop_id=rfq.shop_id, rfq_id=rfq.id, part_number=r.get("part_number") or r.get("description", "Item " + str(r.get("item"))),
+                        description=r.get("description", ""), kind="purchased" if r["purchased"] else "machined", parent_part_id=pid,
+                        qty_per_parent=r.get("qty") or 1, match={"bom_item": r.get("item"), "bom_source": "drawing parts list"}, warnings=[])
+            if r["purchased"]:
+                part.purchased = {"reason": f"drawing parts list: {r['purchased_reason']}", "vendor": r.get("vendor") or "", "description": r.get("description", ""), "unit_cost": 0.0}
+                part.warnings.append("On the drawing parts list only (not in the 3D model). Enter its cost.")
+            else:
+                part.warnings.append("Machined item on the parts list with no model or drawing supplied. Request it, or enter the envelope to price it.")
+                m = detect_material([(r.get("material", ""), "drawing parts list")], cat["materials"])
+                if m:
+                    part.material_code, part.material_source = m["code"], m
+            db.add(part)
+            db.flush()
+            if not r["purchased"]:
+                create_quote(db, rfq, part, sorted({max(1, q * (part.qty_per_parent or 1)) for q in email_qty}), cat)
     audit(db, rfq.shop_id, "rfq", rfq.id, "analyzed", {"parts": len(model_parts), "drawings": len(drawings), "ai": use_ai})
 
 

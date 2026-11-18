@@ -218,7 +218,7 @@ def get_rfq(rid: str, user: User = Depends(current_user), db: Session = Depends(
     for p in r.parts:
         q = db.scalar(select(Quote).where(Quote.part_id == p.id))
         parts.append({**part_dict(p), "quote_id": q.id if q else None,
-                      "versions": [{"id": v.id, "number": v.number, "label": v.label, "status": v.status, "breaks": [{"qty": b["qty"], "unit_price": b["unit_price"]} for b in v.result.get("breaks", [])]} for v in (q.versions if q else [])]})
+                      "versions": [{"id": v.id, "number": v.number, "label": v.label, "status": v.status, "breaks": [{"qty": b["qty"], "unit_price": b["unit_price"], "lead_weeks": b.get("lead_weeks")} for b in v.result.get("breaks", [])]} for v in (q.versions if q else [])]})
     outputs = db.scalars(select(QuoteOutput).where(QuoteOutput.rfq_id == r.id).order_by(QuoteOutput.created_at.desc())).all()
     return {**rfq_summary(db, r), "extracted": r.extracted,
             "email": {"subject": em.subject, "from": f"{em.sender_name} <{em.sender_email}>", "received_at": em.received_at.isoformat(), "body": em.body, "source": em.source} if em else None,

@@ -5,7 +5,7 @@ A web application that helps CNC machine shop estimators quote faster. It reads 
 conservative price per part from the shop's own rates. The estimator can override every number,
 save variants, and send a clean quote: **Part number · Revision · Quantity · Price per part**.
 
-Built to be free for any machine shop to use. Each shop's data is isolated; a shop is created
+Proprietary software of Excel CNC (see LICENSE). Designed so other shops can be onboarded later: each shop's data is isolated, and a shop is created
 automatically the first time someone from a new Microsoft 365 tenant signs in.
 
 ## What it does

@@ -36,3 +36,15 @@ def test_eml_and_fields(samples):
     assert 120 in f["quantities"]["value"]
     assert "15 January 2027" in f["due_date"]["value"] and "27 November 2026" in f["quote_due"]["value"]
     assert "316L" in f["material"]["value"]
+
+
+def test_bom_from_assembly_drawing(samples):
+    from app.services.drawing.bom import extract_bom
+    rows = extract_bom((samples / "SENSOR-MOUNT-ASSY-100_RevA.pdf").read_bytes())
+    by = {r["part_number"]: r for r in rows}
+    assert len(rows) == 6
+    assert by["ISO 4762 M6x20"]["qty"] == 4 and by["ISO 4762 M6x20"]["purchased"]
+    assert by["ISO 7089 M6"]["qty"] == 4 and by["LBL-0007"]["purchased"]
+    assert not by["BRK-20417"]["purchased"] and not by["BASE-PLATE-101"]["purchased"]
+    assert by["BRK-20417"]["description"] == "MOUNTING BRACKET, SENSOR"
+    assert all(r["bbox"] for r in rows)

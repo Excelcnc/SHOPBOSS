@@ -59,7 +59,7 @@ def detect_processes(sources: list[tuple[str, str]], catalog: list[dict]) -> lis
             m = re.search(r"[^.\n;]*" + re.escape(w) + r"[^.\n;]*", full)
             name = f"Unlisted process: {m.group(0).strip()[:60] if m else w}"
             found[name] = {"name": name, "basis": "per_lot", "price": 0.0, "lot_charge": 250.0, "markup_pct": 0.0,
-                           "source": "text", "unpriced": True}
+                           "source": "text", "unpriced": True, "lead_days": 10}
     # avoid double counting anodize + hard anodize
     if "Hard anodize Type III" in found and "Anodize Type II (clear/color)" in found and "TYPE II " not in full.replace("TYPE III", ""):
         found.pop("Anodize Type II (clear/color)")
