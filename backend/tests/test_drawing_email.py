@@ -1,0 +1,38 @@
+from app.services.drawing.dxf import analyze_dxf
+from app.services.drawing.extract import analyze_pdf, image_to_pdf
+from app.services.email.parse import extract_fields, parse_eml
+
+
+def test_pdf_title_block_and_callouts(samples):
+    r = analyze_pdf((samples / "SHF-3310_RevD.pdf").read_bytes())
+    m = {k: v["value"] for k, v in r["meta"].items()}
+    assert m["drawing_number"] == "SHF-3310" and m["revision"] == "D" and m["units"] == "MM"
+    assert "4140" in m["material"]
+    vals = {(i["cat"], i["value"]) for i in r["items"]}
+    assert ("fit", "Ø30 g6") in vals and ("dimension", "180.00") in vals
+    fit = next(i for i in r["items"] if i["cat"] == "fit")
+    assert abs(fit["band"] - 0.013) < 1e-6 and fit["critical"]
+    assert all(0 <= x <= 1 for i in r["items"] for x in i["bbox"])
+
+
+def test_scan_has_no_text(samples):
+    r = analyze_pdf(image_to_pdf((samples / "CAS-7781-04_scan.png").read_bytes()))
+    assert r["has_text"] is False and r["items"] == []
+
+
+def test_dxf(samples):
+    r = analyze_dxf((samples / "FLG-5520_RevA.dxf").read_bytes())
+    assert r["meta"]["drawing_number"]["value"] == "FLG-5520"
+    assert "316L" in r["meta"]["material"]["value"]
+    assert any(i["cat"] == "hole" and i["qty"] == 8 and i["value"] == "Ø14.0" for i in r["items"])
+
+
+def test_eml_and_fields(samples):
+    e = parse_eml((samples / "RFQ_BWP-2026-0418.eml").read_bytes())
+    assert e.sender_email == "p.raman@brightwater-pumps.example" and len(e.attachments) == 1
+    f = extract_fields(e.subject, e.body, e.sender_name, e.sender_email, [a[0] for a in e.attachments])
+    assert f["customer_name"]["value"] == "Brightwater Pumps Ltd"
+    assert f["customer_rfq_no"]["value"] == "BWP-2026-0418"
+    assert 120 in f["quantities"]["value"]
+    assert "15 January 2027" in f["due_date"]["value"] and "27 November 2026" in f["quote_due"]["value"]
+    assert "316L" in f["material"]["value"]
