@@ -28,7 +28,11 @@ services:
     volumes: [files:/data/files]
     depends_on: [db, redis]
   web:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_ENTRA_CLIENT_ID: ${VITE_ENTRA_CLIENT_ID:-}
+        VITE_ENTRA_TENANT_ID: ${VITE_ENTRA_TENANT_ID:-}
     ports: ["8080:80"]
     depends_on: [api]
 volumes: { pgdata: {}, files: {} }
