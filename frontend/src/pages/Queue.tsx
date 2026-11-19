@@ -17,7 +17,7 @@ export default function Queue() {
     <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">RFQ queue</h1>
-        {!me?.integrations?.graph && !me?.integrations?.imap && <Badge tone="amber">Mailbox not connected: upload emails or files</Badge>}
+        {me && !me.integrations?.mailboxes?.length && <Badge tone="amber">No mailbox connected (Shop settings › Email accounts): upload emails or files</Badge>}
         <div className="ml-auto flex gap-2">
           <input className="input !w-64" placeholder="Search customer, RFQ, part number" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
           <button className="btn" onClick={list.reload} aria-label="Refresh"><RefreshCw size={14} /></button>

@@ -59,6 +59,19 @@ Estimators can also simply forward RFQs to the quoting mailbox.
 5. Under **Authentication** for the sign-in app, add these Single-page application redirect URIs:
    the pilot's address (e.g. `https://quote.excel-cnc.com`) and `http://localhost:5173` for local testing.
 
+## Connecting several mailboxes
+
+Mailboxes are added in the app under **Shop settings › Email accounts** (admins only):
+
+- **Microsoft 365** mailboxes (shared or personal, same tenant) use the mailbox app above — no
+  password per mailbox. Add each one to the access-policy group so the app may read it:
+  `Add-DistributionGroupMember -Identity "CNC Quote mailboxes" -Member sales@yourshop.com`
+  (policy changes can take up to an hour to apply). Then click **Test** in the app.
+- **Other providers** (Gmail, web hosts…) connect over IMAP with an app password, stored encrypted
+  with the server's `SECRET_KEY` (set it once to a long random value and keep it).
+- Each mailbox has its own folder, RFQ filter, on/off switch, "Check now", and import counts. The same
+  email arriving in two connected mailboxes becomes one RFQ.
+
 ## Shared mailboxes (e.g. purchasing@)
 
 A shared mailbox also receives invoices, order confirmations and suppliers' quotes. Two safeguards:

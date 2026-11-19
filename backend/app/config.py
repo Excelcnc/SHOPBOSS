@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     ai_enabled: bool = True
 
     max_attachment_mb: int = 50
+    secret_key: str = ""  # encrypts stored mailbox passwords; set a long random value in production
     # which shop the configured mailbox belongs to: "entra:<tenant id>" in production, "dev:default" locally
     intake_tenant_key: str = "dev:default"
     cors_origins: str = "http://localhost:5173"

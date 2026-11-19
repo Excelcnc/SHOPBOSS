@@ -68,10 +68,10 @@ def add_files(db: Session, rfq: Rfq, files: list[tuple[str, bytes]]):
         rfq.attachments.append(Attachment(shop_id=rfq.shop_id, filename=name, kind=kind, ext=ext, size=len(data), sha256=sha, storage_key=key))
 
 
-def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source: str) -> Rfq | None:
+def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source: str, mailbox: str = "") -> Rfq | None:
     if db.scalar(select(Email).where(Email.shop_id == shop_id, Email.message_id == parsed.message_id)):
         return None  # duplicate delivery
-    em = Email(shop_id=shop_id, source=source, message_id=parsed.message_id, sender_name=parsed.sender_name, sender_email=parsed.sender_email,
+    em = Email(shop_id=shop_id, source=source, mailbox=mailbox, message_id=parsed.message_id, sender_name=parsed.sender_name, sender_email=parsed.sender_email,
                subject=parsed.subject, body=parsed.body, received_at=parsed.received_at)
     db.add(em)
     db.flush()
@@ -83,7 +83,7 @@ def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source
     db.add(rfq)
     db.flush()
     add_files(db, rfq, parsed.attachments)
-    audit(db, shop_id, "rfq", rfq.id, "created", {"source": source, "subject": parsed.subject, "attachments": len(parsed.attachments)})
+    audit(db, shop_id, "rfq", rfq.id, "created", {"source": source, "mailbox": mailbox, "subject": parsed.subject, "attachments": len(parsed.attachments)})
     return rfq
 
 

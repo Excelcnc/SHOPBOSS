@@ -93,7 +93,7 @@ export default function Rfq() {
           </section>
           <section className="card">
             <button className="flex w-full items-center gap-2 px-4 py-3 text-left font-semibold" onClick={() => setShowMail(!showMail)}><Mail size={15} /> Original email<span className="ml-auto text-xs font-normal text-steel-500">{showMail ? "Hide" : "Show"}</span></button>
-            {showMail && d.email && <div className="border-t border-steel-200 px-4 py-3 text-sm"><div className="text-xs text-steel-500">From {d.email.from} · {new Date(d.email.received_at).toLocaleString()} · via {d.email.source}</div>
+            {showMail && d.email && <div className="border-t border-steel-200 px-4 py-3 text-sm"><div className="text-xs text-steel-500">From {d.email.from} · {new Date(d.email.received_at).toLocaleString()} · via {d.email.mailbox || d.email.source}</div>
               <pre className="mt-2 whitespace-pre-wrap font-sans">{d.email.body}</pre></div>}
             <ul className="border-t border-steel-200 px-4 py-2 text-sm">{d.attachments.map((a: any) => <li key={a.id} className="flex items-center gap-2 py-1"><FileText size={13} className="text-steel-400" />
               <button className="truncate text-navy-700 hover:underline" onClick={async () => window.open(await api.blobUrl(`/attachments/${a.id}/file`))}>{a.filename}</button><span className="ml-auto text-xs text-steel-400">{a.kind}</span></li>)}</ul>

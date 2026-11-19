@@ -103,11 +103,37 @@ class OutsideProcess(Base, TimestampMixin):
 
 
 # ---------------------------------------------------------------- intake
+class Mailbox(Base, TimestampMixin):
+    """An email account the app pulls RFQs from. Microsoft 365 mailboxes use the deployment's Graph app;
+    other providers use IMAP with an (encrypted) app password."""
+    __tablename__ = "mailboxes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # graph | imap
+    address: Mapped[str] = mapped_column(String(320))
+    label: Mapped[str] = mapped_column(String(120), default="")
+    folder: Mapped[str] = mapped_column(String(200), default="inbox")
+    filter_rfqs: Mapped[bool] = mapped_column(Boolean, default=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    backfill_days: Mapped[int] = mapped_column(Integer, default=0)  # import this many days of old mail on first sync
+    imap_host: Mapped[str] = mapped_column(String(200), default="")
+    imap_port: Mapped[int] = mapped_column(Integer, default=993)
+    imap_user: Mapped[str] = mapped_column(String(320), default="")
+    imap_password_enc: Mapped[str] = mapped_column(Text, default="")
+    state: Mapped[dict] = mapped_column(JSONType, default=dict)  # delta link, subscription, last uid
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    imported: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    __table_args__ = (UniqueConstraint("shop_id", "kind", "address", "folder"),)
+
+
 class Email(Base, TimestampMixin):
     __tablename__ = "emails"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
     source: Mapped[str] = mapped_column(String(20))  # graph | imap | upload
+    mailbox: Mapped[str] = mapped_column(String(320), default="")  # which connected account it came from
     message_id: Mapped[str] = mapped_column(String(500), index=True)
     sender_name: Mapped[str] = mapped_column(String(300), default="")
     sender_email: Mapped[str] = mapped_column(String(320), default="")

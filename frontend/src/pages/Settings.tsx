@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { api, money } from "../api";
 import { Badge, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
+import EmailAccounts from "./EmailAccounts";
 
 const KINDS = [["mill3", "3-axis mill"], ["mill4", "4-axis mill"], ["mill5", "5-axis mill"], ["lathe", "Lathe"], ["millturn", "Mill-turn"]];
 const POLICY: [string, string, string][] = [["margin_pct", "Margin", "%"], ["contingency_pct", "Contingency (always applied)", "%"], ["uncertainty_pct_per_item", "Extra time per uncertain item", "%"],
@@ -15,7 +16,7 @@ export default function Settings() {
   const me = useMe();
   const admin = me?.role === "admin";
   const s = useAsync(() => api.get("/shop"), []);
-  const [tab, setTab] = useState("rates");
+  const [tab, setTab] = useState("email");
   if (!s.data) return <p className="p-8 text-steel-500">Loading…</p>;
   const d = s.data, cur = d.currency;
   const save = async (fn: () => Promise<any>) => { try { await fn(); toast("Saved"); s.reload(); } catch (e: any) { toast(e.message); } };
@@ -23,8 +24,10 @@ export default function Settings() {
     <div className="mx-auto max-w-6xl px-6 py-6">
       <h1 className="mb-1 text-xl font-semibold">Shop settings</h1>
       <p className="mb-4 text-sm text-steel-500">{admin ? "Changes apply to new estimates and to Re-calculate on drafts." : "Only shop admins can change settings."}</p>
-      <div className="mb-4 flex gap-1">{[["rates", "Rates"], ["machines", "Machines"], ["materials", "Materials"], ["processes", "Outside processes"], ["policy", "Pricing policy"]].map(([k, l]) =>
+      <div className="mb-4 flex gap-1">{[["email", "Email accounts"], ["rates", "Rates"], ["machines", "Machines"], ["materials", "Materials"], ["processes", "Outside processes"], ["policy", "Pricing policy"]].map(([k, l]) =>
         <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
+
+      {tab === "email" && <EmailAccounts admin={admin} />}
 
       {tab === "rates" && <div className="card overflow-x-auto"><table className="w-full"><thead><tr><th className="th">Rate</th><th className="th">Key</th><th className="th text-right">{cur} / hour</th><th className="th"></th></tr></thead>
         <tbody>{d.rates.map((r: any) => <tr key={r.id}><td className="td">{r.name}</td><td className="td font-mono text-xs text-steel-500">{r.key}</td>

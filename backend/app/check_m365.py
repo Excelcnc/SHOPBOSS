@@ -1,7 +1,8 @@
 """Check the Microsoft 365 setup from the server, using the values in .env.
 
-    python -m app.check_m365                 # mailbox access + settings
-    python -m app.check_m365 other@shop.com  # also confirm the access policy blocks another mailbox
+    python -m app.check_m365                                   # app sign-in, permission, GRAPH_MAILBOX if set
+    python -m app.check_m365 sales@shop.com                    # check a specific mailbox you plan to connect
+    python -m app.check_m365 sales@shop.com --other ceo@shop.com   # and confirm the policy blocks another one
 
 Prints counts only; never message contents.
 """
@@ -22,7 +23,10 @@ def main() -> int:
         print(("  OK    " if good else "  FAIL  ") + msg + (f"\n          -> {fix}" if fix and not good else ""))
 
     print("Microsoft 365 mailbox connection")
-    for k in ("graph_tenant_id", "graph_client_id", "graph_client_secret", "graph_mailbox"):
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    other = sys.argv[sys.argv.index("--other") + 1] if "--other" in sys.argv else None
+    mailbox = (args[0] if args and args[0] != other else "") or s.graph_mailbox
+    for k in ("graph_tenant_id", "graph_client_id", "graph_client_secret"):
         line(bool(getattr(s, k)), f"{k.upper()} is set", f"add {k.upper()} to .env")
     if not ok:
         return 1
@@ -38,15 +42,17 @@ def main() -> int:
     line("Mail.Read" in claims.get("roles", []) or "Mail.ReadWrite" in claims.get("roles", []), "Mail.Read application permission granted",
          "API permissions -> add Microsoft Graph APPLICATION permission Mail.Read -> Grant admin consent")
     h = {"Authorization": "Bearer " + tok["access_token"]}
-    r = httpx.get(f"https://graph.microsoft.com/v1.0/users/{s.graph_mailbox}/mailFolders/inbox?$select=totalItemCount,unreadItemCount", headers=h, timeout=30)
-    if r.status_code == 200:
-        j = r.json()
-        line(True, f"can read {s.graph_mailbox} inbox ({j.get('totalItemCount')} messages, {j.get('unreadItemCount')} unread)")
+    if not mailbox:
+        print("  INFO  no mailbox given: add one under Shop settings > Email accounts, or run with an address")
     else:
-        line(False, f"reading {s.graph_mailbox} inbox returned HTTP {r.status_code}",
-             "check the mailbox address; if 403, the application access policy may exclude it (Test-ApplicationAccessPolicy)")
-    if len(sys.argv) > 1:
-        other = sys.argv[1]
+        r = httpx.get(f"https://graph.microsoft.com/v1.0/users/{mailbox}/mailFolders/inbox?$select=totalItemCount,unreadItemCount", headers=h, timeout=30)
+        if r.status_code == 200:
+            j = r.json()
+            line(True, f"can read {mailbox} inbox ({j.get('totalItemCount')} messages, {j.get('unreadItemCount')} unread)")
+        else:
+            line(False, f"reading {mailbox} inbox returned HTTP {r.status_code}",
+                 "check the address; if 403, add the mailbox to the access-policy group (docs/M365_SETUP.md step 4)")
+    if other:
         r2 = httpx.get(f"https://graph.microsoft.com/v1.0/users/{other}/mailFolders/inbox?$select=totalItemCount", headers=h, timeout=30)
         line(r2.status_code in (403, 404), f"access policy blocks other mailbox {other} (HTTP {r2.status_code})",
              "the app can read other mailboxes: create the ApplicationAccessPolicy in docs/M365_SETUP.md step 4")

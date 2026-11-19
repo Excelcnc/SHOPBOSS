@@ -33,7 +33,7 @@ export default function App() {
             <div className="mt-auto space-y-1 px-4 py-4 text-[11px] text-navy-100/70">
               <div>{me.data?.name} · {me.data?.role}</div>
               {entraConfigured && <button className="underline hover:text-white" onClick={() => signOut()}>Sign out</button>}
-              <div>Mailbox: {me.data?.integrations?.graph ? me.data.integrations.graph_mailbox : me.data?.integrations?.imap ? "IMAP" : "not connected"}</div>
+              <div>Mailboxes: {me.data?.integrations?.mailboxes?.length ? me.data.integrations.mailboxes.join(", ") : "none connected"}</div>
               <div>AI extraction: {me.data?.integrations?.ai ? "on" : "off"}</div>
             </div>
           </aside>

@@ -15,7 +15,7 @@ from .auth import current_user, require_admin
 from .config import get_settings
 from .db import get_db
 from .jobs import enqueue_analysis
-from .models import (Attachment, AuditLog, HistoricalJob, Machine, Material, OutsideProcess, Part, Quote, QuoteOutput, QuoteVersion,
+from .models import (Attachment, AuditLog, HistoricalJob, Machine, Mailbox, Material, OutsideProcess, Part, Quote, QuoteOutput, QuoteVersion,
                      RateType, Rfq, Shop, User)
 from .services import history as hist
 from .services import quoting
@@ -39,7 +39,7 @@ def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
     shop = db.get(Shop, user.shop_id)
     s = get_settings()
     return {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "shop": {"id": shop.id, "name": shop.name, "currency": shop.currency},
-            "integrations": {"graph": bool(s.graph_client_id and s.graph_mailbox), "graph_mailbox": s.graph_mailbox, "imap": bool(s.imap_host),
+            "integrations": {"mailboxes": [m.address for m in db.scalars(select(Mailbox).where(Mailbox.shop_id == user.shop_id, Mailbox.active.is_(True)))],
                              "ai": bool(s.anthropic_api_key and s.ai_enabled), "auth": s.auth_mode}}
 
 
@@ -221,7 +221,7 @@ def get_rfq(rid: str, user: User = Depends(current_user), db: Session = Depends(
                       "versions": [{"id": v.id, "number": v.number, "label": v.label, "status": v.status, "breaks": [{"qty": b["qty"], "unit_price": b["unit_price"], "lead_weeks": b.get("lead_weeks")} for b in v.result.get("breaks", [])]} for v in (q.versions if q else [])]})
     outputs = db.scalars(select(QuoteOutput).where(QuoteOutput.rfq_id == r.id).order_by(QuoteOutput.created_at.desc())).all()
     return {**rfq_summary(db, r), "extracted": r.extracted,
-            "email": {"subject": em.subject, "from": f"{em.sender_name} <{em.sender_email}>", "received_at": em.received_at.isoformat(), "body": em.body, "source": em.source} if em else None,
+            "email": {"subject": em.subject, "from": f"{em.sender_name} <{em.sender_email}>", "received_at": em.received_at.isoformat(), "body": em.body, "source": em.source, "mailbox": em.mailbox} if em else None,
             "attachments": [{"id": a.id, "filename": a.filename, "kind": a.kind, "ext": a.ext, "size": a.size} for a in r.attachments],
             "parts": parts, "outputs": [{"id": o.id, "quote_number": o.quote_number, "lines": o.lines, "valid_until": o.valid_until, "created_at": o.created_at.isoformat()} for o in outputs],
             "activity": [{"action": a.action, "detail": a.detail, "at": a.at.isoformat(), "user_id": a.user_id} for a in db.scalars(select(AuditLog).where(AuditLog.entity_id == r.id).order_by(AuditLog.at.desc()).limit(50))]}
@@ -490,25 +490,137 @@ def calibration(user: User = Depends(current_user), db: Session = Depends(get_db
 # ------------------------------------------------------------------ intake webhooks
 @api.post("/intake/graph/notify")
 async def graph_notify(request: Request, db: Session = Depends(get_db)):
-    """Microsoft Graph change notifications. Validation handshake echoes validationToken."""
+    """Microsoft Graph change notifications for any connected mailbox. The validation handshake echoes
+    validationToken; each notification is matched to its mailbox by subscription id and client state."""
     token = request.query_params.get("validationToken")
     if token:
         return Response(token, media_type="text/plain")
-    s = get_settings()
     payload = await request.json()
-    from .models import IntegrationState
-    st = db.scalar(select(IntegrationState).where(IntegrationState.kind == "tenant:" + s.intake_tenant_key))
-    if not st:
-        return Response(status_code=202)
-    from .services.email.graph import GraphClient, ingest_message
-    client = GraphClient.from_settings()
+    from .models import Mailbox
+    from .services.email import mailboxes as mbx
+    graph_boxes = db.scalars(select(Mailbox).where(Mailbox.kind == "graph", Mailbox.active.is_(True))).all()
     for n in payload.get("value", []):
-        if n.get("clientState") != s.graph_client_state:
+        mb = next((m for m in graph_boxes if (m.state or {}).get("subscription", {}).get("id") == n.get("subscriptionId")), None)
+        if not mb or n.get("clientState") != mb.state["subscription"].get("client_state"):
             continue  # not ours
         mid = (n.get("resourceData") or {}).get("id")
-        if mid and client:
+        if mid:
             try:
-                ingest_message(db, st.shop_id, client, mid)
+                mbx.ingest_graph_message(db, mb, mid)
+                db.commit()
             except Exception:
-                db.rollback()  # the delta poller picks it up
+                db.rollback()  # the poller's delta sync picks it up
     return Response(status_code=202)
+
+
+# ------------------------------------------------------------------ connected mailboxes
+class MailboxBody(BaseModel):
+    kind: Optional[str] = None          # graph | imap
+    address: Optional[str] = None
+    label: Optional[str] = None
+    folder: Optional[str] = None
+    filter_rfqs: Optional[bool] = None
+    active: Optional[bool] = None
+    backfill_days: Optional[int] = None
+    imap_host: Optional[str] = None
+    imap_port: Optional[int] = None
+    imap_user: Optional[str] = None
+    imap_password: Optional[str] = None  # write-only
+
+
+def mailbox_dict(m) -> dict:
+    sub = (m.state or {}).get("subscription")
+    return {"id": m.id, "kind": m.kind, "address": m.address, "label": m.label, "folder": m.folder, "filter_rfqs": m.filter_rfqs, "active": m.active,
+            "backfill_days": m.backfill_days, "imap_host": m.imap_host, "imap_port": m.imap_port, "imap_user": m.imap_user, "has_password": bool(m.imap_password_enc),
+            "last_sync_at": m.last_sync_at.isoformat() if m.last_sync_at else None, "last_error": m.last_error, "imported": m.imported, "skipped": m.skipped,
+            "instant": bool(sub), "synced_once": bool((m.state or {}).get("delta_link") or "last_uid" in (m.state or {}))}
+
+
+@api.get("/mailboxes")
+def list_mailboxes(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .models import Mailbox
+    from .services.email.graph import graph_configured
+    rows = db.scalars(select(Mailbox).where(Mailbox.shop_id == user.shop_id).order_by(Mailbox.created_at)).all()
+    s = get_settings()
+    return {"graph_available": graph_configured(), "webhook": bool(s.graph_webhook_url), "mailboxes": [mailbox_dict(m) for m in rows]}
+
+
+@api.post("/mailboxes")
+def add_mailbox(body: MailboxBody, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    import re as _re
+    from .crypto import encrypt
+    from .models import Mailbox
+    from .services.email.graph import graph_configured
+    from .services.email.imap import guess_host
+    addr = (body.address or "").strip().lower()
+    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", addr):
+        raise HTTPException(400, "Enter a valid email address.")
+    kind = body.kind or "graph"
+    if kind not in ("graph", "imap"):
+        raise HTTPException(400, "kind must be graph or imap")
+    if kind == "graph" and not graph_configured():
+        raise HTTPException(400, "Microsoft 365 mailboxes need the mailbox app configured on the server (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET).")
+    if kind == "imap" and not body.imap_password:
+        raise HTTPException(400, "Enter the app password for this mailbox.")
+    folder = (body.folder or "inbox").strip() or "inbox"
+    if db.scalar(select(Mailbox).where(Mailbox.shop_id == user.shop_id, Mailbox.kind == kind, Mailbox.address == addr, Mailbox.folder == folder)):
+        raise HTTPException(409, "That mailbox and folder are already connected.")
+    m = Mailbox(shop_id=user.shop_id, kind=kind, address=addr, label=body.label or "", folder=folder,
+                filter_rfqs=True if body.filter_rfqs is None else body.filter_rfqs, active=True, backfill_days=max(0, min(90, body.backfill_days or 0)))
+    if kind == "imap":
+        m.imap_host = (body.imap_host or guess_host(addr)).strip()
+        m.imap_port = body.imap_port or 993
+        m.imap_user = (body.imap_user or addr).strip()
+        m.imap_password_enc = encrypt(body.imap_password)
+    db.add(m)
+    audit(db, user.shop_id, "mailbox", addr, "connect", {"kind": kind, "folder": folder}, user.id)
+    db.commit()
+    from .services.email import mailboxes as mbx
+    res = mbx.test(m)
+    return {**mailbox_dict(m), "test": res}
+
+
+@api.put("/mailboxes/{mid}")
+def update_mailbox(mid: str, body: MailboxBody, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from .crypto import encrypt
+    from .models import Mailbox
+    m = own(db.get(Mailbox, mid), user)
+    data = body.model_dump(exclude_none=True)
+    for k in ("label", "filter_rfqs", "active", "backfill_days", "imap_host", "imap_port", "imap_user"):
+        if k in data:
+            setattr(m, k, data[k])
+    if "folder" in data and data["folder"] != m.folder:
+        m.folder = data["folder"].strip() or "inbox"
+        m.state = {}  # new folder: start a fresh position (and subscription)
+    if data.get("imap_password"):
+        m.imap_password_enc = encrypt(data["imap_password"])
+    audit(db, user.shop_id, "mailbox", m.address, "update", {k: v for k, v in data.items() if k != "imap_password"}, user.id)
+    db.commit()
+    return mailbox_dict(m)
+
+
+@api.delete("/mailboxes/{mid}")
+def delete_mailbox(mid: str, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from .models import Mailbox
+    from .services.email import mailboxes as mbx
+    m = own(db.get(Mailbox, mid), user)
+    audit(db, user.shop_id, "mailbox", m.address, "disconnect", {}, user.id)
+    mbx.remove(db, m)
+    return {"ok": True}
+
+
+@api.post("/mailboxes/{mid}/test")
+def test_mailbox(mid: str, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from .models import Mailbox
+    from .services.email import mailboxes as mbx
+    return mbx.test(own(db.get(Mailbox, mid), user))
+
+
+@api.post("/mailboxes/{mid}/sync")
+def sync_mailbox(mid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .models import Mailbox
+    from .services.email import mailboxes as mbx
+    m = own(db.get(Mailbox, mid), user)
+    n = mbx.sync(db, m)
+    m = db.get(type(m), mid)
+    return {"imported": n, **mailbox_dict(m)}
