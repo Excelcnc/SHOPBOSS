@@ -63,10 +63,25 @@ class GraphClient:
         r.raise_for_status()
         return r
 
+    def folder_id(self) -> str:
+        """Well-known 'inbox', or a folder found by name at the top level or under Inbox."""
+        name = get_settings().graph_folder.strip() or "inbox"
+        if name.lower() == "inbox":
+            return "inbox"
+        if getattr(self, "_folder", None):
+            return self._folder
+        q = name.replace("'", "''")
+        for base in (f"/users/{self.mailbox}/mailFolders", f"/users/{self.mailbox}/mailFolders/inbox/childFolders"):
+            hits = self._req("GET", f"{base}?$filter=displayName eq '{q}'&$select=id").json().get("value", [])
+            if hits:
+                self._folder = hits[0]["id"]
+                return self._folder
+        raise RuntimeError(f"Mail folder '{name}' not found in {self.mailbox}. Create it (top level or under Inbox) or set GRAPH_FOLDER=inbox.")
+
     # ---- subscriptions
     def subscribe(self, notify_url: str, client_state: str) -> dict:
         exp = (datetime.now(timezone.utc) + timedelta(minutes=4200)).strftime("%Y-%m-%dT%H:%M:%S.0000000Z")
-        body = {"changeType": "created", "notificationUrl": notify_url, "resource": f"users/{self.mailbox}/mailFolders('inbox')/messages",
+        body = {"changeType": "created", "notificationUrl": notify_url, "resource": f"users/{self.mailbox}/mailFolders('{self.folder_id()}')/messages",
                 "expirationDateTime": exp, "clientState": client_state}
         return self._req("POST", "/subscriptions", json=body).json()
 
@@ -93,7 +108,7 @@ class GraphClient:
         return ParsedEmail(m.get("internetMessageId") or msg_id, frm.get("name", ""), frm.get("address", ""), m.get("subject", ""), text, when, atts)
 
     def delta(self, delta_link: str | None) -> tuple[list[str], str]:
-        url = delta_link or f"/users/{self.mailbox}/mailFolders('inbox')/messages/delta?$select=id"
+        url = delta_link or f"/users/{self.mailbox}/mailFolders('{self.folder_id()}')/messages/delta?$select=id"
         ids = []
         while True:
             r = self._req("GET", url).json()
@@ -116,7 +131,12 @@ def _state(db: Session, shop_id: str, kind: str) -> IntegrationState:
 def ingest_message(db: Session, shop_id: str, client: GraphClient, msg_id: str):
     from ...jobs import enqueue_analysis
     from ..pipeline import create_rfq_from_email
+    from .parse import looks_like_rfq
     parsed = client.get_message(msg_id)
+    keep, why = looks_like_rfq(parsed)
+    if not keep:
+        log.info("skipped non-RFQ email %s (%s)", parsed.message_id, why)
+        return None
     rfq = create_rfq_from_email(db, shop_id, parsed, "graph")
     db.commit()
     if rfq:

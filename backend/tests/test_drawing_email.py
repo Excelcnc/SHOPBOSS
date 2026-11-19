@@ -48,3 +48,15 @@ def test_bom_from_assembly_drawing(samples):
     assert not by["BRK-20417"]["purchased"] and not by["BASE-PLATE-101"]["purchased"]
     assert by["BRK-20417"]["description"] == "MOUNTING BRACKET, SENSOR"
     assert all(r["bbox"] for r in rows)
+
+
+def test_rfq_filter_for_shared_mailbox():
+    from datetime import datetime, timezone
+    from app.services.email.parse import ParsedEmail, looks_like_rfq
+    mk = lambda subj, body, atts: ParsedEmail("<x>", "A", "a@b.c", subj, body, datetime.now(timezone.utc), [(n, b"") for n in atts])
+    assert looks_like_rfq(mk("Parts", "see attached", ["BRK-1.step"]))[0]
+    assert looks_like_rfq(mk("RFQ 4471 bracket", "please quote 50 pcs", ["BRK-1.pdf"]))[0]
+    assert looks_like_rfq(mk("Request for quotation", "drawing to follow", []))[0]
+    assert not looks_like_rfq(mk("Invoice 88231", "Please find attached invoice", ["INV-88231.pdf"]))[0]
+    assert not looks_like_rfq(mk("Your order 5521 has shipped", "tracking attached", ["packing-slip.pdf"]))[0]
+    assert not looks_like_rfq(mk("Quotation Q-2231 for aluminium bar", "our price for 6061 bar", ["Q-2231.pdf"]))[0]  # a supplier's quote to us

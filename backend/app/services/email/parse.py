@@ -172,3 +172,28 @@ def extract_fields(subject: str, body: str, sender_name: str, sender_email: str,
     if re.search(r"\bITAR\b|export[- ]controlled|EAR99", text, re.I):
         out["itar"] = _f(True, 0.8, "export-control wording in email")
     return out
+
+
+MODEL_EXTS = (".step", ".stp", ".iges", ".igs", ".stl", ".sldprt", ".sldasm", ".x_t", ".zip")
+DRAWING_EXTS = (".pdf", ".dxf", ".dwg", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
+
+
+def looks_like_rfq(p: ParsedEmail) -> tuple[bool, str]:
+    """Decide whether a mailbox email is a customer RFQ (shared mailboxes also get invoices, supplier quotes...)."""
+    from ...config import get_settings
+    s = get_settings()
+    if not s.intake_filter:
+        return True, "filter off"
+    names = [a[0].lower() for a in p.attachments]
+    has_model = any(n.endswith(MODEL_EXTS) for n in names)
+    has_drawing = any(n.endswith(DRAWING_EXTS) for n in names)
+    text = (p.subject + " \n" + p.body[:4000]).lower()
+    kws = [k.strip().lower() for k in s.intake_keywords.split(",") if k.strip()]
+    hit = next((k for k in kws if re.search(r"(?<![a-z])" + re.escape(k) + r"(?![a-z])", text)), None)
+    if has_model:
+        return True, "3D model attached"
+    if hit and has_drawing:
+        return True, f"'{hit}' with a drawing attached"
+    if hit:
+        return True, f"'{hit}' in the email (no drawing yet)"
+    return False, "no CAD model and no RFQ wording"

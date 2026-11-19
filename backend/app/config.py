@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     graph_mailbox: str = ""                    # e.g. quotes@yourshop.com
     graph_webhook_url: str = ""                # public https URL of /api/intake/graph/notify
     graph_client_state: str = "change-me"      # shared secret echoed in notifications
+    graph_folder: str = "inbox"                # "inbox", or a folder name such as "RFQ" (top level or under Inbox)
+    # Shared mailboxes receive more than RFQs: only take emails that look like customer RFQs
+    # (a 3D model attached, or RFQ wording plus a drawing). Uploads are never filtered.
+    intake_filter: bool = True
+    intake_keywords: str = "rfq,rfp,request for quote,request for quotation,quote request,please quote,please price,pricing request,enquiry,inquiry,bid request"
 
     # Generic mailbox (forwarding address) via IMAP
     imap_host: str = ""

@@ -31,7 +31,9 @@ def poll(db: Session, shop_id: str) -> int:
             typ, msg = M.uid("fetch", str(uid), "(RFC822)")
             raw = next((part[1] for part in msg if isinstance(part, tuple)), None)
             if raw:
-                rfq = create_rfq_from_email(db, shop_id, parse_eml(raw), "imap")
+                from .parse import looks_like_rfq
+                parsed = parse_eml(raw)
+                rfq = create_rfq_from_email(db, shop_id, parsed, "imap") if looks_like_rfq(parsed)[0] else None
                 db.commit()
                 if rfq:
                     enqueue_analysis(rfq.id)

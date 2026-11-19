@@ -59,6 +59,18 @@ Estimators can also simply forward RFQs to the quoting mailbox.
 5. Under **Authentication** for the sign-in app, add these Single-page application redirect URIs:
    the pilot's address (e.g. `https://quote.excel-cnc.com`) and `http://localhost:5173` for local testing.
 
+## Shared mailboxes (e.g. purchasing@)
+
+A shared mailbox also receives invoices, order confirmations and suppliers' quotes. Two safeguards:
+
+- `GRAPH_FOLDER=RFQ` — the app watches one folder only. Create it in Outlook (top level or under
+  Inbox) and fill it with an Outlook rule or by dragging customer RFQs into it. Most reliable.
+- `INTAKE_FILTER=true` (default) — an email becomes an RFQ only if it has a 3D model attached, or
+  RFQ wording ("RFQ", "request for quote", "please quote"…). Invoices, shipping notices and supplier
+  quotations are skipped. Anything missed can still be uploaded by hand as a .msg file.
+
+A dedicated address (e.g. quotes@) that customers send RFQs to is cleanest long-term.
+
 ## 3. Check it
 
 On the server, after filling in `.env`:
