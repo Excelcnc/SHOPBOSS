@@ -1,1 +1,3 @@
-interface ImportMetaEnv { readonly VITE_ENTRA_CLIENT_ID?: string; readonly VITE_ENTRA_TENANT_ID?: string } interface ImportMeta { readonly env: ImportMetaEnv }
+// "1" in the demo build (npm run build:demo): sample data and the cost engine run in the browser.
+interface ImportMetaEnv { readonly VITE_DEMO?: string }
+interface ImportMeta { readonly env: ImportMetaEnv }

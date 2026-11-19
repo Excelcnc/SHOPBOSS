@@ -116,3 +116,24 @@ def test_lead_time_on_quote(client, samples):
     import fitz
     text = fitz.open(stream=pdf, filetype="pdf")[0].get_text()
     assert "Lead time" in text and "8 weeks, 2 releases" in text
+
+
+def test_upload_quantity_box_is_a_list(client, samples):
+    """'25,100' typed in the quantity box means 25 and 100 (not twenty-five thousand one hundred)."""
+    files = [("files", (n, open(samples / n, "rb").read())) for n in ("BRK-20417_RevC.step", "BRK-20417_RevC.pdf")]
+    r = client.post("/api/rfqs", data={"customer_name": "Acme", "subject": "Bracket", "quantities": "25,100;500"}, files=files)
+    rfq = client.get(f"/api/rfqs/{r.json()[0]['id']}").json()
+    q = client.get(f"/api/quotes/{rfq['parts'][0]['quote_id']}").json()
+    assert q["versions"][0]["inputs"]["quantities"] == [25, 100, 500]
+
+
+def test_delete_analysed_rfq(client, samples):
+    files = [("files", (n, open(samples / n, "rb").read())) for n in ("SENSOR-MOUNT-ASSY-100.step", "SENSOR-MOUNT-ASSY-100_RevA.pdf")]
+    rid = client.post("/api/rfqs", data={"customer_name": "Northwind", "quantities": "5"}, files=files).json()[0]["id"]
+    assert len(client.get(f"/api/rfqs/{rid}").json()["parts"]) > 1
+    other = client.post("/api/rfqs", data={"customer_name": "Northwind again", "quantities": "5"}, files=files).json()[0]["id"]
+    assert client.delete(f"/api/rfqs/{rid}").status_code == 200
+    assert client.get(f"/api/rfqs/{rid}").status_code == 404
+    # the same files are still used by the other RFQ, so they must still open
+    for a in client.get(f"/api/rfqs/{other}").json()["attachments"]:
+        assert client.get(f"/api/attachments/{a['id']}/file").status_code == 200

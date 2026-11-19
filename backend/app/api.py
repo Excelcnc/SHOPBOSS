@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -195,7 +196,10 @@ async def create_rfq(files: list[UploadFile] = File(default=[]), customer_name: 
         else:
             loose.append((f.filename, data))
     if loose or not created:
-        body = notes + (f"\nQuantity: {quantities}" if quantities else "")
+        # The form's quantity box is a list: every comma, semicolon or space separates quantities
+        # ("25,100" means 25 and 100, unlike "1,000" in an email). Normalise before field extraction.
+        qlist = [q for q in (int(t) for t in re.split(r"[;,\s]+", quantities.strip()) if t.isdigit()) if q > 0]
+        body = notes + (f"\nQuantity: {', '.join(str(q) for q in qlist)}" if qlist else "")
         parsed = ParsedEmail(f"<manual-{datetime.now(timezone.utc).timestamp()}@{user.id}>", "", customer_email, subject or "Manual RFQ",
                              body, datetime.now(timezone.utc), loose)
         r = create_rfq_from_email(db, user.shop_id, parsed, "upload")
@@ -285,14 +289,32 @@ def reanalyze(rid: str, user: User = Depends(current_user), db: Session = Depend
 @api.delete("/rfqs/{rid}")
 def delete_rfq(rid: str, user: User = Depends(require_admin), db: Session = Depends(get_db)):
     r = own(db.get(Rfq, rid), user)
-    for p in r.parts:
+    keys = [a.storage_key for a in r.attachments]
+    for o in db.scalars(select(QuoteOutput).where(QuoteOutput.rfq_id == r.id)):
+        keys.append(o.pdf_key)
+        db.delete(o)
+    parts = db.scalars(select(Part).where(Part.rfq_id == r.id)).all()
+    for p in parts:
         for q in db.scalars(select(Quote).where(Quote.part_id == p.id)):
             db.delete(q)
-    for o in db.scalars(select(QuoteOutput).where(QuoteOutput.rfq_id == r.id)):
-        db.delete(o)
+        # parts point at attachments and at their parent assembly: unlink before deleting
+        p.parent_part_id = p.model_attachment_id = p.drawing_attachment_id = None
     db.flush()
+    for p in parts:
+        db.delete(p)
+    db.flush()
+    audit(db, user.shop_id, "rfq", r.id, "deleted", {"number": r.number}, user.id)
     db.delete(r)
     db.commit()
+    # Files are stored once per shop by content, so another RFQ may share one: delete only unused files.
+    for k in {k for k in keys if k}:
+        used = db.scalar(select(Attachment.id).where(Attachment.storage_key == k).limit(1)) or \
+            db.scalar(select(QuoteOutput.id).where(QuoteOutput.pdf_key == k).limit(1))
+        if not used:
+            try:
+                storage.delete(k)
+            except Exception:
+                pass
     return {"ok": True}
 
 

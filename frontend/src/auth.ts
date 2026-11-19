@@ -20,6 +20,7 @@ export function setSession(token: string) { safeSet(KEY, token); }
 
 /** Call once at start-up. Returns true when the user can use the app (signed in, or dev mode). */
 export async function initAuth(): Promise<boolean> {
+  if (import.meta.env.VITE_DEMO === "1") return true;  // demo build: no server, no sign-in
   const r = await fetch("/api/config");
   if (!r.ok) throw new Error(`The server is not answering (HTTP ${r.status}).`);
   config = await r.json();

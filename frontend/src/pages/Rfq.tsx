@@ -74,7 +74,7 @@ export default function Rfq() {
           {d.outputs?.length > 0 && <section className="card p-4"><h2 className="mb-2 font-semibold">Quotes sent</h2>
             {d.outputs.map((o: any) => <div key={o.id} className="flex items-center gap-3 border-t border-steel-100 py-2 text-sm"><span className="font-mono">{o.quote_number}</span><span className="text-steel-500">valid until {o.valid_until}</span>
               <span className="ml-auto num">{money(o.lines.reduce((s: number, l: any) => s + l.extended, 0), cur)}</span>
-              <button className="btn btn-sm" onClick={async () => window.open(await api.blobUrl(`/outputs/${o.id}/pdf`))}>PDF</button></div>)}</section>}
+              <button className="btn btn-sm" onClick={() => api.open(`/outputs/${o.id}/pdf`).catch((e) => toast(e.message))}>PDF</button></div>)}</section>}
           <section className="card p-4"><h2 className="mb-2 font-semibold">Activity</h2>
             <ul className="space-y-1 text-xs text-steel-600">{d.activity.map((a: any, i: number) => <li key={i}><span className="text-steel-400">{new Date(a.at).toLocaleString()}</span> · {a.action}</li>)}</ul></section>
         </div>
@@ -96,7 +96,7 @@ export default function Rfq() {
             {showMail && d.email && <div className="border-t border-steel-200 px-4 py-3 text-sm"><div className="text-xs text-steel-500">From {d.email.from} · {new Date(d.email.received_at).toLocaleString()} · via {d.email.mailbox || d.email.source}</div>
               <pre className="mt-2 whitespace-pre-wrap font-sans">{d.email.body}</pre></div>}
             <ul className="border-t border-steel-200 px-4 py-2 text-sm">{d.attachments.map((a: any) => <li key={a.id} className="flex items-center gap-2 py-1"><FileText size={13} className="text-steel-400" />
-              <button className="truncate text-navy-700 hover:underline" onClick={async () => window.open(await api.blobUrl(`/attachments/${a.id}/file`))}>{a.filename}</button><span className="ml-auto text-xs text-steel-400">{a.kind}</span></li>)}</ul>
+              <button className="truncate text-navy-700 hover:underline" onClick={() => api.open(`/attachments/${a.id}/file`).catch((e) => toast(e.message))}>{a.filename}</button><span className="ml-auto text-xs text-steel-400">{a.kind}</span></li>)}</ul>
           </section>
         </aside>
       </div>

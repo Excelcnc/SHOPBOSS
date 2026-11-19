@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body, #root { height: 100%; }
+body { background: #f6f7f9; color: #1b2027; }
+.demo-quote h2 { font-size: 1.25rem; font-weight: 700; }
+.demo-quote h3 { margin: .25rem 0 .75rem; font-weight: 600; }
+.demo-quote p { margin: .25rem 0; font-size: .875rem; }
+.demo-quote .tw { overflow-x: auto; margin: 1rem 0; }
+.demo-quote table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+.demo-quote th { background: #14325c; color: #fff; text-align: left; padding: 6px 8px; white-space: nowrap; }
+.demo-quote td { border: 1px solid #c8cfd8; padding: 6px 8px; }
+.demo-quote .r { text-align: right; font-variant-numeric: tabular-nums; }
+.demo-quote .note { color: #6f7a8a; font-size: .75rem; margin-top: 1rem; }
+
 @layer components {
   .card { @apply bg-white border border-steel-200 rounded-lg; }
   .btn { @apply inline-flex items-center gap-1.5 rounded-md border border-steel-300 bg-white px-3 py-1.5 text-sm font-medium text-steel-800 hover:bg-steel-50 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-600; }

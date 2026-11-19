@@ -4,7 +4,13 @@ import { getConfig, getToken, sessionExpired } from "./auth";
 
 export type Json = any;
 
+export const DEMO = import.meta.env.VITE_DEMO === "1";
+
 async function req<T = Json>(method: string, path: string, body?: any, isForm = false): Promise<T> {
+  if (DEMO) {
+    const { demoRequest } = await import("./demo/api");
+    return demoRequest(method, path, isForm ? undefined : body);
+  }
   const headers: Record<string, string> = {};
   const token = await getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -28,7 +34,18 @@ export const api = {
   patch: <T = Json>(p: string, b?: any) => req<T>("PATCH", p, b),
   del: <T = Json>(p: string) => req<T>("DELETE", p),
   form: <T = Json>(p: string, f: FormData) => req<T>("POST", p, f, true),
-  blobUrl: async (p: string) => URL.createObjectURL(await req<Blob>("GET", p)),
+  blobUrl: async (p: string) => {
+    if (DEMO) { const { demoFile } = await import("./demo/api"); return (await demoFile(p)).content; }
+    return URL.createObjectURL(await req<Blob>("GET", p));
+  },
+  /** Opens a file (drawing, quote PDF) in a new tab; the demo shows it over the page instead. */
+  open: async (p: string) => {
+    if (DEMO) {
+      const [{ demoFile }, { showViewer }] = await Promise.all([import("./demo/api"), import("./demo/viewer")]);
+      return showViewer(await demoFile(p));
+    }
+    window.open(URL.createObjectURL(await req<Blob>("GET", p)));
+  },
 };
 
 export const money = (v: number | null | undefined, cur = "USD") =>

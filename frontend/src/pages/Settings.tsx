@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Plus, Trash2 } from "lucide-react";
 import { api, money } from "../api";
 import { Badge, toast, useAsync } from "../components/ui";
@@ -17,7 +18,8 @@ export default function Settings() {
   const me = useMe();
   const admin = me?.role === "admin";
   const s = useAsync(() => api.get("/shop"), []);
-  const [tab, setTab] = useState(new URLSearchParams(location.search).get("tab") || "email");
+  const loc = useLocation();
+  const [tab, setTab] = useState(new URLSearchParams(loc.search).get("tab") || "email");
   if (!s.data) return <p className="p-8 text-steel-500">Loading…</p>;
   const d = s.data, cur = d.currency;
   const save = async (fn: () => Promise<any>) => { try { await fn(); toast("Saved"); s.reload(); } catch (e: any) { toast(e.message); } };
@@ -25,7 +27,7 @@ export default function Settings() {
     <div className="mx-auto max-w-6xl px-6 py-6">
       <h1 className="mb-1 text-xl font-semibold">Shop settings</h1>
       <p className="mb-4 text-sm text-steel-500">{admin ? "Changes apply to new estimates and to Re-calculate on drafts." : "Only shop admins can change settings."}</p>
-      <div className="mb-4 flex gap-1">{[["email", "Email accounts"], ["team", "Team"], ["rates", "Rates"], ["machines", "Machines"], ["materials", "Materials"], ["processes", "Outside processes"], ["policy", "Pricing policy"]].map(([k, l]) =>
+      <div className="mb-4 flex flex-wrap gap-1">{[["email", "Email accounts"], ["team", "Team"], ["rates", "Rates"], ["machines", "Machines"], ["materials", "Materials"], ["processes", "Outside processes"], ["policy", "Pricing policy"]].map(([k, l]) =>
         <button key={k} onClick={() => setTab(k)} className={`rounded-md px-3 py-1.5 text-sm ${tab === k ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
 
       {tab === "email" && <EmailAccounts admin={admin} />}

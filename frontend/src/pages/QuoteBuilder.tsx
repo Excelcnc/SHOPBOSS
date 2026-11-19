@@ -65,7 +65,7 @@ export default function QuoteBuilder() {
       </div>
       {missing.length > 0 && <p className="mb-3 text-sm text-amber-800">{missing.length} line(s) can't be priced yet: open the part and enter its envelope.</p>}
       <div className="flex gap-2"><button className="btn btn-primary" disabled={!included.length || missing.length > 0} onClick={finalize}>Create quote</button>
-        {out && <button className="btn" onClick={async () => window.open(await api.blobUrl(`/outputs/${out.id}/pdf`))}><FileDown size={14} /> Open PDF</button>}</div>
+        {out && <button className="btn" onClick={() => api.open(`/outputs/${out.id}/pdf`).catch((e) => toast(e.message))}><FileDown size={14} /> Open PDF</button>}</div>
       {out && <div className="card mt-6 p-4"><div className="mb-2 font-semibold">Quote {out.quote_number} created · valid until {out.valid_until}</div>
         <p className="mb-3 text-sm text-steel-500">Included versions are now final; use Save As on the part to make changes. Record the result when the customer decides:</p>
         <div className="flex gap-2"><button className="btn" onClick={async () => { await api.post(`/rfqs/${id}/outcome`, { outcome: "won" }); toast("Marked won; added to history"); }}><Trophy size={14} /> Won</button>

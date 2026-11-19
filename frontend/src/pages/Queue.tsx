@@ -26,7 +26,7 @@ export default function Queue() {
         </div>
       </div>
       {me && all.data && <GettingStarted hasMailbox={!!me.integrations?.mailboxes?.length} hasRfq={all.data.length > 0} admin={me.role === "admin"} onUpload={() => setShow(true)} />}
-      <div className="mb-3 flex gap-1">{TABS.map(([v, l]) => <button key={l} onClick={() => setTab(v)} className={`rounded-md px-3 py-1.5 text-sm ${tab === v ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
+      <div className="mb-3 flex flex-wrap gap-1">{TABS.map(([v, l]) => <button key={l} onClick={() => setTab(v)} className={`rounded-md px-3 py-1.5 text-sm ${tab === v ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
       <div className="card overflow-x-auto">
         <table className="w-full">
           <thead><tr><th className="th">RFQ</th><th className="th">Customer</th><th className="th">Subject</th><th className="th">Received</th><th className="th">Quote due</th><th className="th">Parts priced</th><th className="th">Status</th></tr></thead>
@@ -59,6 +59,7 @@ function NewRfq({ onClose }: { onClose: () => void }) {
   const [over, setOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const f = useRef<Record<string, string>>({});
+  const [, redraw] = useState(0);  // re-check the Create button as fields are typed
   const pick = useRef<HTMLInputElement>(null);
   const nav = useNavigate();
   const submit = async () => {
@@ -72,7 +73,7 @@ function NewRfq({ onClose }: { onClose: () => void }) {
       onClose(); nav(`/rfq/${r[0].id}`);
     } catch (e: any) { toast(e.message); setBusy(false); }
   };
-  const set = (k: string) => (e: any) => (f.current[k] = e.target.value);
+  const set = (k: string) => (e: any) => { f.current[k] = e.target.value; redraw((n) => n + 1); };
   return (
     <Modal title="New RFQ" onClose={onClose} wide footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn btn-primary" disabled={busy || (!files.length && !f.current.subject)} onClick={submit}>{busy ? "Analysing…" : "Create and analyse"}</button></>}>
       <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); setFiles([...files, ...Array.from(e.dataTransfer.files)]); }}
@@ -88,7 +89,7 @@ function NewRfq({ onClose }: { onClose: () => void }) {
         <div><label className="label" htmlFor="n-c">Customer</label><input id="n-c" className="input" onChange={set("customer_name")} /></div>
         <div><label className="label" htmlFor="n-e">Customer email</label><input id="n-e" className="input" onChange={set("customer_email")} /></div>
         <div><label className="label" htmlFor="n-s">Subject</label><input id="n-s" className="input" onChange={set("subject")} /></div>
-        <div><label className="label" htmlFor="n-q">Quantities</label><input id="n-q" className="input" placeholder="e.g. 25, 100, 500" onChange={set("quantities")} /></div>
+        <div><label className="label" htmlFor="n-q">Quantities</label><input id="n-q" className="input" placeholder="e.g. 25, 100, 1000" onChange={set("quantities")} /></div>
         <div className="col-span-2"><label className="label" htmlFor="n-n">Notes (material, finish, due date…)</label><textarea id="n-n" className="input" rows={3} onChange={set("notes")} /></div>
       </div>
     </Modal>
