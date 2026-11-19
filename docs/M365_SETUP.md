@@ -93,3 +93,10 @@ python -m app.check_m365 someone.else@yourshop.com   # confirms the app can NOT 
 ```
 
 Every line should say OK. It prints message counts only, never message contents.
+
+## Easier alternative: "Sign in with Microsoft" per mailbox
+
+Instead of adding each mailbox to the access-policy group with PowerShell, mailboxes can be connected
+from **Shop settings → Email accounts** by signing in with Microsoft. See docs/RENDER_SETUP.md, step
+4b, for the one-time app registration change.
+

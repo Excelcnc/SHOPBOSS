@@ -84,11 +84,36 @@ password. Don't open sign-up to other shops until email is set up.
 1. Open the address. Choose **Create an account**.
 2. Enter your **@excel-cnc.com** email, your name, **Excel CNC** as the shop name, and a password.
 3. Enter the 6-digit code from your inbox. You're in, as the shop's admin.
-4. **Shop settings → Email accounts → Connect a mailbox → Microsoft 365 / Outlook**:
-   `purchasing@excel-cnc.com`, folder `RFQ` → **Connect**. The test should say *Connected… N messages*.
-   (This works only for accounts proven at `excel-cnc.com`: that's what `GRAPH_SHOP_DOMAINS` does, so
-   other shops can never connect your mailboxes.)
+4. **Shop settings → Email accounts → Connect a mailbox**. Two ways for Microsoft 365:
+   - **Microsoft 365 / Outlook** (sign in; recommended): needs the one-time Entra change in step 4b.
+     Type the mailbox (e.g. `sales@excel-cnc.com`, or empty for your own), folder `RFQ`, then **Sign in
+     with Microsoft** as someone who can open that mailbox in Outlook. No PowerShell for new mailboxes.
+   - **Microsoft 365 (company app)**: no sign-in, but each mailbox must be in the "CNC Quote mailboxes"
+     group (PowerShell). purchasing@ is already in it. Only accounts proven at `excel-cnc.com` see this
+     option (`GRAPH_SHOP_DOMAINS`), so other shops can never connect your mailboxes.
 5. **Shop settings → Team** → invite your estimators by email.
+
+### 4b. One-time Entra change for "Sign in with Microsoft" mailbox connections
+
+In **entra.microsoft.com → App registrations → CNC Quote mailbox** (`02a1a3b2-…`):
+
+1. **Authentication → Add a platform → Web**. Redirect URI:
+   `https://<your app address>/api/oauth/microsoft/callback` (same address as `APP_URL`). Save.
+2. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: tick
+   `offline_access`, `User.Read`, `Mail.Read`, `Mail.Read.Shared` → **Add permissions** →
+   **Grant admin consent for Excel CNC** → Yes.
+
+That's all. People can then connect their own mailbox, or a shared mailbox they already have access
+to. To give someone access to a shared mailbox: Microsoft 365 admin center → **Teams & groups →
+Shared mailboxes** → the mailbox → **Members** → add them.
+
+The app only ever reads mail. Each connection can be removed in the app, or by the person at
+myaccount.microsoft.com → **Apps & services**.
+
+Later, to let *other companies* connect their Outlook too, create a separate app registration with
+"Accounts in any organizational directory and personal Microsoft accounts", the same Web redirect URI
+and delegated permissions, and set `MS_CONNECT_CLIENT_ID`, `MS_CONNECT_CLIENT_SECRET` and
+`MS_CONNECT_TENANT=common` in Render.
 
 ## 6. Your own web address (optional)
 

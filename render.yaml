@@ -55,6 +55,13 @@ services:
         sync: false
       - key: GRAPH_CLIENT_STATE
         generateValue: true
+      # Optional: a multi-tenant app so other companies can "Connect with Microsoft" (defaults to the GRAPH app)
+      - key: MS_CONNECT_CLIENT_ID
+        sync: false
+      - key: MS_CONNECT_CLIENT_SECRET
+        sync: false
+      - key: MS_CONNECT_TENANT
+        sync: false
       # Optional: AI reading of emails and scanned drawings
       - key: ANTHROPIC_API_KEY
         sync: false

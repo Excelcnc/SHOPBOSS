@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # admins have proven an address at these domains may connect Microsoft 365 mailboxes, and only at
     # these domains. Comma list, e.g. "excel-cnc.com". Empty = nobody (except in dev mode).
     graph_shop_domains: str = ""
+    # "Connect with Microsoft" for mailboxes (delegated sign-in; no admin PowerShell needed). A Web app
+    # registration with redirect URI <APP_URL>/api/oauth/microsoft/callback and delegated permissions
+    # offline_access, User.Read, Mail.Read, Mail.Read.Shared. Defaults to the mailbox app (GRAPH_*) and its
+    # tenant; set MS_CONNECT_* to a multi-tenant app ("common") so other companies can connect too.
+    ms_connect_client_id: str = ""
+    ms_connect_client_secret: str = ""
+    ms_connect_tenant: str = ""
     graph_folder: str = "inbox"                # "inbox", or a folder name such as "RFQ" (top level or under Inbox)
     # Shared mailboxes receive more than RFQs: only take emails that look like customer RFQs
     # (a 3D model attached, or RFQ wording plus a drawing). Uploads are never filtered.
@@ -76,6 +83,16 @@ class Settings(BaseSettings):
         if self.graph_webhook_url:
             return self.graph_webhook_url
         return self.app_url.rstrip("/") + "/api/intake/graph/notify" if self.app_url.startswith("https://") else ""
+
+    @property
+    def ms_connect(self) -> dict | None:
+        cid = self.ms_connect_client_id or self.graph_client_id
+        secret = self.ms_connect_client_secret if self.ms_connect_client_id else self.graph_client_secret
+        if not (cid and secret and self.app_url):
+            return None
+        tenant = self.ms_connect_tenant or ("common" if self.ms_connect_client_id else self.graph_tenant_id or "common")
+        return {"client_id": cid, "secret": secret, "tenant": tenant,
+                "redirect_uri": self.app_url.rstrip("/") + "/api/oauth/microsoft/callback"}
 
     @property
     def sqlalchemy_url(self) -> str:

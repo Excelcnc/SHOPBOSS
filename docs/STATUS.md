@@ -19,7 +19,7 @@
   `GRAPH_SHOP_DOMAINS`.
 - Database migrations (Alembic), applied automatically on start.
 - Render deployment (`render.yaml`, docs/RENDER_SETUP.md): one service runs web, worker and poller.
-- 38 automated backend tests (`cd backend && pytest`), plus browser walkthroughs (sign-up → first
+- 44 automated backend tests (`cd backend && pytest`), plus browser walkthroughs (sign-up → first
   priced RFQ → invite teammate takes under a minute of app time).
 
 ## Implemented, needs your configuration to verify
@@ -43,8 +43,10 @@
 - Ribs and straight-edge chamfers are reported as generic faces, not named features.
 - Live material market prices: reference prices are a dated snapshot; enter your supplier prices.
 - JobBOSS² API and Mastercam integration (see ROADMAP).
-- Other companies' Microsoft 365 mailboxes: no "Connect Outlook" button yet (needs delegated
-  permissions). Until then they use IMAP or forward RFQs to a mailbox they can connect.
+- "Connect with Microsoft" for mailboxes is built and tested against a simulated Microsoft; it needs
+  the Entra change in docs/RENDER_SETUP.md (4b) to try for real. Other companies need a multi-tenant
+  app (`MS_CONNECT_*`). Shared mailboxes may not get instant notifications with delegated access; they
+  are then checked every 5 minutes.
 - Gmail one-click connect (needs Google's security review); IMAP with an app password works today.
 - Export-controlled (ITAR/EAR) data: not suitable for an ordinary cloud host. AI is skipped for such
   RFQs, but the files are still stored. Tell shops not to upload ITAR technical data.

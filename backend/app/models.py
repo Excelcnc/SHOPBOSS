@@ -128,12 +128,15 @@ class OutsideProcess(Base, TimestampMixin):
 
 # ---------------------------------------------------------------- intake
 class Mailbox(Base, TimestampMixin):
-    """An email account the app pulls RFQs from. Microsoft 365 mailboxes use the deployment's Graph app;
-    other providers use IMAP with an (encrypted) app password."""
+    """An email account the app pulls RFQs from.
+    kind "msoauth": someone signed in with Microsoft and allowed reading (their own mailbox, or a shared
+                    mailbox they have access to); an encrypted refresh token is kept.
+    kind "graph":   the deployment's own mailbox app (application permission, one Microsoft 365 company).
+    kind "imap":    other providers, with an encrypted app password."""
     __tablename__ = "mailboxes"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(10))  # graph | imap
+    kind: Mapped[str] = mapped_column(String(10))  # msoauth | graph | imap
     address: Mapped[str] = mapped_column(String(320))
     label: Mapped[str] = mapped_column(String(120), default="")
     folder: Mapped[str] = mapped_column(String(200), default="inbox")
@@ -144,6 +147,8 @@ class Mailbox(Base, TimestampMixin):
     imap_port: Mapped[int] = mapped_column(Integer, default=993)
     imap_user: Mapped[str] = mapped_column(String(320), default="")
     imap_password_enc: Mapped[str] = mapped_column(Text, default="")
+    oauth_token_enc: Mapped[str] = mapped_column(Text, default="")        # msoauth: encrypted refresh token
+    connected_as: Mapped[str] = mapped_column(String(320), default="")    # msoauth: who signed in
     state: Mapped[dict] = mapped_column(JSONType, default=dict)  # delta link, subscription, last uid
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[Optional[str]] = mapped_column(Text)

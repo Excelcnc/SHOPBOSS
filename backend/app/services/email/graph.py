@@ -168,5 +168,51 @@ class GraphClient:
                 return ids, r.get("@odata.deltaLink", url)
 
 
+SCOPES = "offline_access User.Read Mail.Read Mail.Read.Shared"
+
+
+class DelegatedGraphClient(GraphClient):
+    """Reads a mailbox as the person who connected it ("Connect with Microsoft"). Uses their refresh
+    token; Microsoft returns a new one with each refresh, handed to on_refresh for saving."""
+
+    def __init__(self, refresh_token: str, mailbox: str, folder: str = "inbox", on_refresh=None, http: httpx.Client | None = None, cfg: dict | None = None):
+        self.cfg = cfg or get_settings().ms_connect
+        if not self.cfg:
+            raise RuntimeError("Connect with Microsoft is not configured on the server (APP_URL and the Microsoft app settings).")
+        super().__init__(self.cfg["tenant"], self.cfg["client_id"], self.cfg["secret"], mailbox, folder, http)
+        self.refresh_token, self.on_refresh = refresh_token, on_refresh
+
+    def token(self) -> str:
+        if self._token and datetime.now(timezone.utc) < self._exp:
+            return self._token
+        r = token_request(self.http, self.cfg, {"grant_type": "refresh_token", "refresh_token": self.refresh_token})
+        self._token = r["access_token"]
+        self._exp = datetime.now(timezone.utc) + timedelta(seconds=int(r.get("expires_in", 3600)) - 120)
+        if r.get("refresh_token") and r["refresh_token"] != self.refresh_token:
+            self.refresh_token = r["refresh_token"]
+            if self.on_refresh:
+                self.on_refresh(self.refresh_token)
+        return self._token
+
+
+def token_request(http: httpx.Client, cfg: dict, data: dict) -> dict:
+    r = http.post(f"https://login.microsoftonline.com/{cfg['tenant']}/oauth2/v2.0/token",
+                  data={"client_id": cfg["client_id"], "client_secret": cfg["secret"], "scope": SCOPES, **data})
+    body = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code != 200 or "access_token" not in body:
+        desc = body.get("error_description") or r.text[:300]
+        if body.get("error") == "invalid_grant" and data.get("grant_type") == "refresh_token":
+            raise RuntimeError("Microsoft sign-in for this mailbox has expired or was revoked. Click Reconnect and sign in again.")
+        if body.get("error") == "invalid_grant":
+            raise RuntimeError("Microsoft sign-in didn't complete. Please try connecting again.")
+        known = {"AADSTS7000215": "the Microsoft app's client secret on the server is wrong.",
+                 "AADSTS7000222": "the Microsoft app's client secret has expired.",
+                 "AADSTS50194": "the Microsoft app only allows your own company. Set MS_CONNECT_* to a multi-tenant app for other companies.",
+                 "AADSTS65001": "permission wasn't granted. An admin may need to approve the app for your organization."}
+        hint = next((v for k, v in known.items() if k in desc), desc.split(" Trace ID")[0][:300])
+        raise RuntimeError(f"Microsoft sign-in failed: {hint}")
+    return body
+
+
 def new_client_state() -> str:
     return secrets.token_urlsafe(24)

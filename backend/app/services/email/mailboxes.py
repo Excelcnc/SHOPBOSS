@@ -9,14 +9,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...config import get_settings
-from ...crypto import decrypt
+from ...crypto import decrypt, encrypt
 from ...models import IntegrationState, Mailbox
-from .graph import GraphClient, graph_address_allowed, graph_configured, new_client_state
+from .graph import DelegatedGraphClient, GraphClient, graph_address_allowed, graph_configured, new_client_state
 from .imap import ImapClient
 from .parse import ParsedEmail, looks_like_rfq, parse_eml
 
 log = logging.getLogger(__name__)
 now = lambda: datetime.now(timezone.utc)
+MS_KINDS = ("graph", "msoauth")  # read through Microsoft Graph
 
 
 def _ingest(db: Session, mb: Mailbox, parsed: ParsedEmail) -> bool:
@@ -38,6 +39,10 @@ def _ingest(db: Session, mb: Mailbox, parsed: ParsedEmail) -> bool:
 
 
 def graph_client(mb: Mailbox, http: httpx.Client | None = None) -> GraphClient:
+    if mb.kind == "msoauth":
+        def save(rt: str):  # Microsoft rotates refresh tokens; keep the newest
+            mb.oauth_token_enc = encrypt(rt)
+        return DelegatedGraphClient(decrypt(mb.oauth_token_enc), mb.address, mb.folder, on_refresh=save, http=http)
     return GraphClient.for_mailbox(mb.address, mb.folder, http)
 
 
@@ -50,7 +55,7 @@ def sync(db: Session, mb: Mailbox, client=None) -> int:
     old mail when backfill_days > 0."""
     n = 0
     try:
-        if mb.kind == "graph":
+        if mb.kind in MS_KINDS:
             c = client or graph_client(mb)
             st = dict(mb.state or {})
             first = not st.get("delta_link")
@@ -89,7 +94,7 @@ def sync(db: Session, mb: Mailbox, client=None) -> int:
 def test(mb: Mailbox, client=None) -> dict:
     """Read-only connection check: sign in, open the folder, report counts. Never reads message contents."""
     try:
-        if mb.kind == "graph":
+        if mb.kind in MS_KINDS:
             info = (client or graph_client(mb)).folder_counts()
             return {"ok": True, "message": f"Connected to {mb.address}, folder '{info.get('displayName', mb.folder)}': {info.get('totalItemCount')} messages, {info.get('unreadItemCount')} unread."}
         with (client or ImapClient(mb.imap_host, mb.imap_port, mb.imap_user or mb.address, decrypt(mb.imap_password_enc), mb.folder)) as c:
@@ -100,8 +105,11 @@ def test(mb: Mailbox, client=None) -> dict:
 
 def ensure_subscription(db: Session, mb: Mailbox, client: GraphClient | None = None):
     s = get_settings()
-    if mb.kind != "graph" or not s.webhook_url:
+    if mb.kind not in MS_KINDS or not s.webhook_url:
         return None
+    failed = (mb.state or {}).get("subscription_failed_at")
+    if failed and now() - datetime.fromisoformat(failed) < timedelta(hours=24):
+        return None  # e.g. shared mailboxes can't always be subscribed with delegated access: 5-minute checks
     c = client or graph_client(mb)
     st = dict(mb.state or {})
     sub = st.get("subscription")
@@ -114,7 +122,12 @@ def ensure_subscription(db: Session, mb: Mailbox, client: GraphClient | None = N
             raise KeyError
     except Exception:
         cs = new_client_state()
-        new = c.subscribe(s.webhook_url, cs)
+        try:
+            new = c.subscribe(s.webhook_url, cs)
+        except Exception:
+            mb.state = {**{k: v for k, v in st.items() if k != "subscription"}, "subscription_failed_at": now().isoformat()}
+            db.commit()
+            raise
         sub = {"id": new["id"], "expirationDateTime": new["expirationDateTime"], "client_state": cs}
     mb.state = {**st, "subscription": {"id": sub["id"], "expirationDateTime": sub["expirationDateTime"], "client_state": sub.get("client_state") or st.get("subscription", {}).get("client_state")}}
     db.commit()
@@ -123,7 +136,7 @@ def ensure_subscription(db: Session, mb: Mailbox, client: GraphClient | None = N
 
 def remove(db: Session, mb: Mailbox):
     sub = (mb.state or {}).get("subscription")
-    if mb.kind == "graph" and sub and graph_configured():
+    if mb.kind in MS_KINDS and sub and (graph_configured() or mb.kind == "msoauth"):
         try:
             graph_client(mb).unsubscribe(sub["id"])
         except Exception:
@@ -157,7 +170,7 @@ def poll_all(db: Session) -> dict:
             mb.last_error = "Microsoft 365 connection not allowed for this domain on this server (GRAPH_SHOP_DOMAINS)."
             db.commit()
             continue
-        if mb.kind == "graph":
+        if mb.kind in MS_KINDS:
             try:
                 ensure_subscription(db, mb)
             except Exception as e:

@@ -9,6 +9,7 @@ def prod(monkeypatch):
     """App in production auth mode with a fake outbox instead of SMTP."""
     from fastapi.testclient import TestClient
     from app.config import get_settings
+    from app import models  # noqa: F401  (table definitions must be loaded before drop_all)
     from app.db import Base, engine, reset_engine
     monkeypatch.setenv("AUTH_MODE", "prod")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-for-tokens")

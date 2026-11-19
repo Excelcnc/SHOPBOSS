@@ -498,7 +498,7 @@ async def graph_notify(request: Request, db: Session = Depends(get_db)):
     payload = await request.json()
     from .models import Mailbox
     from .services.email import mailboxes as mbx
-    graph_boxes = db.scalars(select(Mailbox).where(Mailbox.kind == "graph", Mailbox.active.is_(True))).all()
+    graph_boxes = db.scalars(select(Mailbox).where(Mailbox.kind.in_(mbx.MS_KINDS), Mailbox.active.is_(True))).all()
     for n in payload.get("value", []):
         mb = next((m for m in graph_boxes if (m.state or {}).get("subscription", {}).get("id") == n.get("subscriptionId")), None)
         if not mb or n.get("clientState") != mb.state["subscription"].get("client_state"):
@@ -531,7 +531,7 @@ class MailboxBody(BaseModel):
 def mailbox_dict(m) -> dict:
     sub = (m.state or {}).get("subscription")
     return {"id": m.id, "kind": m.kind, "address": m.address, "label": m.label, "folder": m.folder, "filter_rfqs": m.filter_rfqs, "active": m.active,
-            "backfill_days": m.backfill_days, "imap_host": m.imap_host, "imap_port": m.imap_port, "imap_user": m.imap_user, "has_password": bool(m.imap_password_enc),
+            "backfill_days": m.backfill_days, "imap_host": m.imap_host, "imap_port": m.imap_port, "imap_user": m.imap_user, "has_password": bool(m.imap_password_enc), "connected_as": m.connected_as,
             "last_sync_at": m.last_sync_at.isoformat() if m.last_sync_at else None, "last_error": m.last_error, "imported": m.imported, "skipped": m.skipped,
             "instant": bool(sub), "synced_once": bool((m.state or {}).get("delta_link") or "last_uid" in (m.state or {}))}
 
@@ -542,7 +542,8 @@ def list_mailboxes(user: User = Depends(current_user), db: Session = Depends(get
     from .services.email.graph import graph_allowed_for
     rows = db.scalars(select(Mailbox).where(Mailbox.shop_id == user.shop_id).order_by(Mailbox.created_at)).all()
     s = get_settings()
-    return {"graph_available": graph_allowed_for(user), "webhook": bool(s.webhook_url), "mailboxes": [mailbox_dict(m) for m in rows]}
+    from .services.email import msconnect
+    return {"graph_available": graph_allowed_for(user), "ms_connect": msconnect.configured(), "webhook": bool(s.webhook_url), "mailboxes": [mailbox_dict(m) for m in rows]}
 
 
 @api.post("/mailboxes")
@@ -580,6 +581,56 @@ def add_mailbox(body: MailboxBody, user: User = Depends(require_admin), db: Sess
     from .services.email import mailboxes as mbx
     res = mbx.test(m)
     return {**mailbox_dict(m), "test": res}
+
+
+class MsConnectBody(BaseModel):
+    address: str = ""
+    folder: str = "inbox"
+    label: str = ""
+    filter_rfqs: bool = True
+    backfill_days: int = 0
+    reconnect_id: str = ""
+
+
+@api.post("/mailboxes/microsoft/start")
+def ms_connect_start(body: MsConnectBody, response: Response, user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Step 1 of Connect with Microsoft: returns the Microsoft sign-in address for the browser to open."""
+    from .services.email import msconnect
+    if body.reconnect_id:
+        from .models import Mailbox
+        own(db.get(Mailbox, body.reconnect_id), user)
+    try:
+        url, nonce = msconnect.start(user, body.address, body.folder, body.label, body.filter_rfqs, body.backfill_days, body.reconnect_id)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    response.set_cookie(msconnect.COOKIE, nonce, max_age=900, httponly=True, samesite="lax", path="/api/oauth",
+                        secure=get_settings().app_url.startswith("https://"))
+    return {"url": url}
+
+
+@api.get("/oauth/microsoft/callback", include_in_schema=False)
+def ms_connect_callback(request: Request, db: Session = Depends(get_db)):
+    """Step 2: Microsoft sends the browser back here. Saves the mailbox, then returns to Shop settings."""
+    from urllib.parse import urlencode
+    from fastapi.responses import RedirectResponse
+    from .services.email import mailboxes as mbx, msconnect
+    q = request.query_params
+    back = lambda **kw: RedirectResponse("/settings?" + urlencode({"tab": "email", **kw}), status_code=303)
+    if q.get("error"):
+        resp = back(ms_error=(q.get("error_description") or q["error"]).split(" Trace ID")[0][:300])
+    else:
+        try:
+            mb = msconnect.finish(db, q.get("code", ""), q.get("state", ""), request.cookies.get(msconnect.COOKIE))
+            try:
+                mbx.ensure_subscription(db, mb)
+            except Exception:
+                pass  # falls back to 5-minute checks
+            resp = back(ms_connected=mb.address)
+        except RuntimeError as e:
+            db.rollback()
+            resp = back(ms_error=str(e)[:300])
+    resp.delete_cookie(msconnect.COOKIE, path="/api/oauth")
+    return resp
 
 
 @api.put("/mailboxes/{mid}")
