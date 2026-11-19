@@ -151,6 +151,29 @@ def pending_invite(db: Session, email: str) -> Invite | None:
     return db.scalar(select(Invite).where(Invite.email == email, Invite.accepted_at.is_(None)).order_by(Invite.created_at.desc()))
 
 
+def domain_of(email: str) -> str:
+    return email.rsplit("@", 1)[-1].lower()
+
+
+def domain_shop(db: Session, domain: str) -> Shop | None:
+    """Company portal mode: the shop that people from this email domain join (the first one created)."""
+    if domain not in get_settings().signup_domain_set:
+        return None
+    u = db.scalar(select(User).where(User.email.like(f"%@{domain}")).order_by(User.created_at))
+    return db.get(Shop, u.shop_id) if u else None
+
+
+def join_info(db: Session, email: str) -> dict:
+    """What the sign-up form should say for this address."""
+    inv = pending_invite(db, email)
+    if inv:
+        return {"invited": True, "shop": db.get(Shop, inv.shop_id).name}
+    shop = domain_shop(db, domain_of(email))
+    if shop and mailer.enabled():
+        return {"invited": True, "shop": shop.name}
+    return {"invited": False}
+
+
 def signup(db: Session, email: str, password: str, name: str, shop_name: str) -> tuple[User, bool]:
     """Returns (user, needs_code). Re-signing up before verifying just updates the details."""
     s = get_settings()
@@ -161,11 +184,21 @@ def signup(db: Session, email: str, password: str, name: str, shop_name: str) ->
     if user and (user.email_verified or (user.last_login_at and not mailer.enabled())):
         raise HTTPException(409, "An account with this email already exists. Sign in, or use 'Forgot password'.")
     inv = pending_invite(db, email)
+    domains = s.signup_domain_set
     if not user:
-        if not inv and not s.signup_open:
-            raise HTTPException(403, "New sign-ups are by invitation only. Ask your shop admin to invite you.")
         if inv:
             shop, role = db.get(Shop, inv.shop_id), inv.role
+        elif domains:
+            if domain_of(email) not in domains:
+                allowed = " or ".join("@" + d for d in sorted(domains))
+                raise HTTPException(403, f"Only {allowed} email addresses can create accounts here. Ask your admin for an invitation.")
+            shop, role = domain_shop(db, domain_of(email)), "estimator"
+            if shop and not mailer.enabled():
+                raise HTTPException(403, "Ask your admin to invite you (email verification isn't set up on this server yet).")
+            if not shop:
+                shop, role = seed_shop(db, (shop_name or "").strip()[:200] or domain_of(email)), "admin"
+        elif not s.signup_open:
+            raise HTTPException(403, "New sign-ups are by invitation only. Ask your shop admin to invite you.")
         else:
             if not (shop_name or "").strip():
                 raise HTTPException(400, "Enter your shop's name.")

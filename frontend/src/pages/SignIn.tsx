@@ -79,7 +79,9 @@ export default function SignIn() {
         <div className="mb-5 flex items-center gap-2"><span className="grid h-8 w-8 place-items-center rounded-md bg-navy-700 text-white"><Boxes size={18} /></span>
           <span className="font-bold">CNC Quote</span></div>
         <h1 className="mb-1 text-lg font-semibold">{title}</h1>
-        {mode === "signup" && <p className="mb-4 text-sm text-steel-500">Works with any email: Gmail, Outlook, Yahoo, your company address.</p>}
+        {mode === "signup" && <p className="mb-4 text-sm text-steel-500">{cfg.signup_domains?.length
+          ? <>Use your {cfg.signup_domains.map((d) => "@" + d).join(" or ")} work email. Others need an invitation from an admin.</>
+          : "Works with any email: Gmail, Outlook, Yahoo, your company address."}</p>}
         {info && <p className="mb-3 rounded bg-navy-50 px-3 py-2 text-sm text-navy-900">{info}</p>}
 
         {showMs && <>
@@ -92,7 +94,7 @@ export default function SignIn() {
             <input className="input mt-1" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} onBlur={mode === "signup" ? checkInvite : undefined} /></label>}
           {mode === "signup" && <>
             <label className="block text-sm">Your name<input className="input mt-1" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} /></label>
-            {invitedTo ? <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">You've been invited to <b>{invitedTo}</b>. You'll join their shop.</p>
+            {invitedTo ? <p className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">You'll join <b>{invitedTo}</b>.</p>
               : <label className="block text-sm">Shop / company name<input className="input mt-1" autoComplete="organization" required value={shop} onChange={(e) => setShop(e.target.value)} /></label>}
           </>}
           {(mode === "verify" || mode === "reset") && <label className="block text-sm">6-digit code
@@ -106,8 +108,8 @@ export default function SignIn() {
 
         <div className="mt-4 space-y-1 text-center text-sm">
           {mode === "signin" && <>
-            {cfg.signup_open && <p>New here? <button className="text-navy-700 underline" onClick={() => go("signup")}>Create an account</button></p>}
-            {!cfg.signup_open && <p className="text-steel-500">New users: ask your shop admin for an invitation, then <button className="text-navy-700 underline" onClick={() => go("signup")}>create your account</button>.</p>}
+            {(cfg.signup_open || cfg.signup_domains?.length > 0) && <p>New here? <button className="text-navy-700 underline" onClick={() => go("signup")}>Create an account</button></p>}
+            {!cfg.signup_open && !cfg.signup_domains?.length && <p className="text-steel-500">New users: ask your shop admin for an invitation, then <button className="text-navy-700 underline" onClick={() => go("signup")}>create your account</button>.</p>}
             {cfg.email_verification && <p><button className="text-steel-500 underline" onClick={() => go("forgot")}>Forgot password?</button></p>}
           </>}
           {mode === "signup" && <p>Already have an account? <button className="text-navy-700 underline" onClick={() => go("signin")}>Sign in</button></p>}

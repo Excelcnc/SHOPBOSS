@@ -177,3 +177,37 @@ def test_unproven_address_cannot_use_microsoft365(prod, monkeypatch):
     assert prod.get("/api/mailboxes", headers=auth(tok)).json()["graph_available"] is False
     # and the address can't be claimed again by someone else
     assert prod.post("/api/auth/signup", json={"email": "fake@excel-cnc.com", "password": "other long pw", "shop_name": "X"}).status_code == 409
+
+
+@pytest.fixture()
+def portal(prod, monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setenv("SIGNUP_DOMAINS", "excel-cnc.com")
+    get_settings.cache_clear()
+    return prod
+
+
+def test_company_portal_only_company_emails(portal):
+    assert portal.get("/api/config").json()["signup_domains"] == ["excel-cnc.com"]
+    r = portal.post("/api/auth/signup", json={"email": "someone@gmail.com", "password": "long enough pw", "shop_name": "X"})
+    assert r.status_code == 403 and "@excel-cnc.com" in r.json()["detail"]
+    owner = signup(portal, "boss@excel-cnc.com", shop="Excel CNC")
+    # coworkers join the same shop without typing a shop name
+    assert portal.get("/api/auth/invite", params={"email": "est@excel-cnc.com"}).json() == {"invited": True, "shop": "Excel CNC"}
+    est = signup(portal, "est@Excel-CNC.com", shop="")
+    me = portal.get("/api/me", headers=auth(est)).json()
+    assert me["shop"]["name"] == "Excel CNC" and me["role"] == "estimator"
+    assert portal.get("/api/me", headers=auth(owner)).json()["role"] == "admin"
+    # an outsider still gets in with an invitation
+    portal.post("/api/team/invites", json={"email": "consultant@gmail.com"}, headers=auth(owner))
+    guest = signup(portal, "consultant@gmail.com", shop="")
+    assert portal.get("/api/me", headers=auth(guest)).json()["shop"]["name"] == "Excel CNC"
+    assert len(portal.get("/api/team", headers=auth(owner)).json()["users"]) == 3
+
+
+def test_company_portal_without_email_needs_invites(portal, monkeypatch):
+    from app.services import mailer
+    monkeypatch.setattr(mailer, "enabled", lambda: False)
+    assert portal.post("/api/auth/signup", json={"email": "boss@excel-cnc.com", "password": "long enough pw", "shop_name": "Excel CNC"}).status_code == 200
+    r = portal.post("/api/auth/signup", json={"email": "impostor@excel-cnc.com", "password": "long enough pw"})
+    assert r.status_code == 403 and "invite" in r.json()["detail"]

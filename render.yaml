@@ -24,8 +24,10 @@ services:
         fromService: { type: keyvalue, name: cnc-quote-redis, property: connectionString }
       - key: SECRET_KEY
         generateValue: true
-      - key: SIGNUP_OPEN
-        value: "true"
+      - key: SIGNUP_OPEN          # "false": no public sign-up (company portal); "true": any shop may join
+        value: "false"
+      - key: SIGNUP_DOMAINS       # company portal: e.g. excel-cnc.com (those addresses may sign up and join one shop)
+        sync: false
       - key: APP_URL              # e.g. https://cnc-quote.onrender.com or your own domain
         sync: false
       # Outgoing email for verification codes and invitations (any SMTP service)

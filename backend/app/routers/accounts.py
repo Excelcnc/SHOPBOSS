@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api")
 def public_config():
     """What the sign-in screen needs. No secrets."""
     s = get_settings()
-    return {"dev": s.dev, "signup_open": s.signup_open, "email_verification": mailer.enabled(),
+    return {"dev": s.dev, "signup_open": s.signup_open, "signup_domains": sorted(s.signup_domain_set), "email_verification": mailer.enabled(),
             "microsoft": {"client_id": s.entra_client_id, "tenant": s.entra_tenant_id or "organizations"} if s.entra_client_id else None}
 
 
@@ -59,11 +59,7 @@ def _session(u: User) -> dict:
 @router.get("/auth/invite")
 def invite_lookup(email: str, db: Session = Depends(get_db)):
     """Lets the sign-up form skip 'shop name' for invited people."""
-    inv = accounts.pending_invite(db, accounts.normalize(email))
-    if not inv:
-        return {"invited": False}
-    from ..models import Shop
-    return {"invited": True, "shop": db.get(Shop, inv.shop_id).name}
+    return accounts.join_info(db, accounts.normalize(email))
 
 
 @router.post("/auth/signup")

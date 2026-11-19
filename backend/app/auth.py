@@ -96,6 +96,15 @@ def current_user(db: Session = Depends(get_db), authorization: str | None = Head
             db.commit()
             return user
         domain = email.split("@")[-1] if "@" in email else "shop"
+        if s.signup_domain_set:  # company portal: Microsoft users from the company join the company shop
+            if domain not in s.signup_domain_set:
+                raise HTTPException(403, "This portal is for company accounts only. Ask your admin for an invitation.")
+            shop = accounts.domain_shop(db, domain)
+            if shop:
+                user = User(shop_id=shop.id, email=email, name=name, role="estimator", external_id=ext)
+                db.add(user)
+                db.commit()
+                return user
         shop = _shop_for_tenant(db, "entra:" + claims["tid"], domain)
     user = db.scalar(select(User).where(User.external_id == ext))
     if not user:

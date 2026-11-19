@@ -60,6 +60,7 @@ password. Don't open sign-up to other shops until email is set up.
    | Setting | What to enter |
    |---|---|
    | `APP_URL` | leave empty for now (filled in step 4) |
+   | `SIGNUP_DOMAINS` | `excel-cnc.com`: only Excel CNC addresses can create accounts, and they all join the Excel CNC shop |
    | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | from step 2 |
    | `GRAPH_TENANT_ID` | `782edd6a-46a8-416f-942f-d890b567234e` |
    | `GRAPH_CLIENT_ID` | `02a1a3b2-f8ea-4f71-889e-89937d38902b` (the "CNC Quote mailbox" app) |
@@ -115,14 +116,43 @@ Later, to let *other companies* connect their Outlook too, create a separate app
 and delegated permissions, and set `MS_CONNECT_CLIENT_ID`, `MS_CONNECT_CLIENT_SECRET` and
 `MS_CONNECT_TENANT=common` in Render.
 
-## 6. Your own web address (optional)
+## 6. Employee portal on excel-cnc.com
 
-To use `quote.excel-cnc.com` instead of `….onrender.com`:
+Your public website stays where it is. The app gets its own address under your domain, for example
+**portal.excel-cnc.com**, and the website gets a button that opens it in a new tab.
 
-1. **cnc-quote → Settings → Custom Domains → Add** → `quote.excel-cnc.com`.
-2. Render shows a **CNAME** record. Add it at your DNS provider. Render issues the https certificate
-   itself.
-3. Change `APP_URL` to `https://quote.excel-cnc.com`.
+**a. Give the app the address** (about 10 minutes, plus DNS time):
+
+1. Render: **cnc-quote → Settings → Custom Domains → Add Custom Domain** → `portal.excel-cnc.com`.
+   Render shows a **CNAME** target like `cnc-quote-xxxx.onrender.com`.
+2. Where your domain's DNS is managed (GoDaddy: **My Products → excel-cnc.com → DNS → Add New
+   Record**): Type **CNAME**, Name **portal**, Value = the Render target, TTL default → Save.
+   Only add this one record; don't change the existing ones (they run your website and email).
+3. Back in Render, wait for the domain to show **Verified** and **Certificate issued** (minutes to
+   a few hours).
+4. Render → **Environment**: `APP_URL` = `https://portal.excel-cnc.com` → Save.
+5. Entra → **CNC Quote mailbox** → Authentication → Web redirect URI: add
+   `https://portal.excel-cnc.com/api/oauth/microsoft/callback` (keep or remove the onrender one).
+   If you use "Sign in with Microsoft", add `https://portal.excel-cnc.com` to the **CNC Quote**
+   sign-in app's Single-page application URIs too.
+
+**b. Add the button to your website.** Make a menu item or button named e.g. **Employee Portal**
+linking to `https://portal.excel-cnc.com`, set to **open in a new tab**:
+- GoDaddy Website Builder: Edit website → Site navigation (or add a Button) → Link to **Web address**
+  → paste the address → turn on **Open in new tab** → Publish.
+- WordPress: Appearance → Menus → **Custom Links** → URL + link text → Add to menu → in the item's
+  options tick **Open link in a new tab** (enable it under Screen Options if hidden) → Save.
+- Any other site builder: add a link with "open in new window/tab".
+
+You can also skip the website button and just bookmark the address.
+
+**c. Who can get in.** With `SIGNUP_DOMAINS=excel-cnc.com` and `SIGNUP_OPEN=false`:
+- Anyone with an **@excel-cnc.com** email can create an account; the 6-digit code proves they own the
+  address. They join Excel CNC as estimators. The first account (you) is the admin.
+- Anyone else (a consultant's Gmail, for instance) needs an invitation from **Shop settings → Team**.
+- Admins can disable a person on the Team tab; it signs them out at once.
+- Set up outgoing email (step 2) **before** sharing the link: without it, coworkers can only join by
+  invitation.
 
 ## 7. "Sign in with Microsoft" (optional)
 
@@ -130,7 +160,7 @@ Email accounts work for everyone, including Microsoft 365 users, so this is opti
 button for Excel CNC staff:
 
 1. Entra → App registrations → **CNC Quote** (sign-in app, `195f4887-…`) → **Authentication** →
-   under **Single-page application** add the app's address (e.g. `https://cnc-quote.onrender.com`).
+   under **Single-page application** add the app's address (e.g. `https://portal.excel-cnc.com`).
 2. In Render set `ENTRA_CLIENT_ID=195f4887-cb07-462a-bf97-ad0089629f4d` and
    `ENTRA_TENANT_ID=782edd6a-46a8-416f-942f-d890b567234e`.
 
@@ -138,11 +168,10 @@ With that tenant ID, only Excel CNC accounts can use the Microsoft button; other
 sign-up. Opening the Microsoft button to every company needs the sign-in app switched to
 "Accounts in any organizational directory" and `ENTRA_TENANT_ID=organizations`.
 
-## 8. Opening sign-up to other shops
+## 8. Opening sign-up to other shops (later)
 
-Sign-up is open by default (`SIGNUP_OPEN=true`): anyone can create an account and gets their own,
-separate shop with default rates. To keep it invite-only while testing, set `SIGNUP_OPEN=false`; then
-only people invited from **Team** can create accounts.
+When you're ready to offer it to other shops: remove `SIGNUP_DOMAINS` and set `SIGNUP_OPEN=true`.
+Anyone can then create an account and gets their own, separate shop with default rates.
 
 Before inviting other shops, read docs/STATUS.md, especially *export-controlled (ITAR/EAR) drawings*:
 an ordinary cloud host is not suitable for ITAR technical data.

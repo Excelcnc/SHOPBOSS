@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     entra_tenant_id: str = ""                  # one tenant ID, or "organizations" for any Microsoft 365 company
     entra_client_id: str = ""                  # sign-in app registration (audience)
     signup_open: bool = True                   # anyone may create a shop; False = invite only
+    # Company portal mode, e.g. "excel-cnc.com": only these email domains (plus invited people) can create
+    # accounts, and everyone joins the one company shop instead of creating their own.
+    signup_domains: str = ""
     session_days: int = 30
 
     # Public address of the app, e.g. https://cnc-quote.onrender.com (links in emails, Graph webhook)
@@ -73,6 +76,10 @@ class Settings(BaseSettings):
     intake_tenant_key: str = "dev:default"
     cors_origins: str = "http://localhost:5173"
     static_dir: str = ""                       # built web app to serve (single-service deployments)
+
+    @property
+    def signup_domain_set(self) -> set[str]:
+        return {d.strip().lower().lstrip("@") for d in self.signup_domains.split(",") if d.strip()}
 
     @property
     def dev(self) -> bool:

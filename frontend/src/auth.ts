@@ -4,10 +4,10 @@
 //  - "Sign in with Microsoft" (MSAL) when the server has a Microsoft sign-in app configured
 import { InteractionRequiredAuthError, PublicClientApplication } from "@azure/msal-browser";
 
-export type ServerConfig = { dev: boolean; signup_open: boolean; email_verification: boolean; microsoft: { client_id: string; tenant: string } | null };
+export type ServerConfig = { dev: boolean; signup_open: boolean; signup_domains: string[]; email_verification: boolean; microsoft: { client_id: string; tenant: string } | null };
 
 const KEY = "cq_session";
-let config: ServerConfig = { dev: true, signup_open: true, email_verification: false, microsoft: null };
+let config: ServerConfig = { dev: true, signup_open: true, signup_domains: [], email_verification: false, microsoft: null };
 let msal: PublicClientApplication | null = null;
 let msScopes: string[] = [];
 
