@@ -15,7 +15,7 @@ _Session = None
 def engine():
     global _engine, _Session
     if _engine is None:
-        _engine = create_engine(get_settings().database_url, pool_pre_ping=True, future=True)
+        _engine = create_engine(get_settings().sqlalchemy_url, pool_pre_ping=True, future=True)
         _Session = sessionmaker(bind=_engine, expire_on_commit=False)
     return _engine
 

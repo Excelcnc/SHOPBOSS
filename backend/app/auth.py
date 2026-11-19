@@ -1,10 +1,14 @@
 """Authentication.
 
-* entra: Microsoft Entra ID (Azure AD) bearer tokens. Each Entra tenant maps to one shop, created on
-  first sign-in, so any shop on Microsoft 365 can start using the app (multi-tenant, free to join).
-  The first user of a shop becomes its admin.
-* dev: trusts X-Dev-User / X-Dev-Shop headers. Local development and tests only.
-GitHub sign-in for shops without Microsoft 365 is planned (see docs/ROADMAP.md).
+Production (AUTH_MODE other than "dev") accepts two kinds of bearer token:
+* Email + password accounts (any email provider), see services/accounts.py. Each sign-up creates a
+  shop, unless an admin invited that email, in which case it joins the inviting shop.
+* Microsoft Entra ID tokens ("Sign in with Microsoft"), when ENTRA_CLIENT_ID is set. Each Microsoft 365
+  tenant maps to one shop, created on first sign-in. Someone who already has an email account (or an
+  invitation) is matched by email address instead.
+The first user of a shop becomes its admin.
+
+dev: trusts X-Dev-User / X-Dev-Shop headers. Local development and tests only.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .db import get_db
 from .models import IntegrationState, Shop, User
+from .services import accounts
 from .services.shopdata import seed_shop
 
 
@@ -62,15 +67,36 @@ def current_user(db: Session = Depends(get_db), authorization: str | None = Head
     else:
         if not authorization or not authorization.lower().startswith("bearer "):
             raise HTTPException(401, "Sign in required")
+        token = authorization.split(" ", 1)[1]
+        if accounts.is_local_token(token):
+            return accounts.user_from_token(db, token)
+        if not s.entra_client_id:
+            raise HTTPException(401, "Sign in required")
         try:
-            claims = _verify_entra(authorization.split(" ", 1)[1])
+            claims = _verify_entra(token)
         except jwt.PyJWTError as e:
             raise HTTPException(401, f"Invalid token: {e}")
         email = (claims.get("preferred_username") or claims.get("email") or claims.get("upn") or "").lower()
-        domain = email.split("@")[-1] if "@" in email else "shop"
-        shop = _shop_for_tenant(db, "entra:" + claims["tid"], domain)
         ext = "entra:" + claims["oid"]
         name = claims.get("name", email)
+        user = db.scalar(select(User).where(User.external_id == ext))
+        if not user and email:
+            # Same person as an email account or an invitation: use that shop.
+            user = accounts.find(db, email)
+            inv = None if user else accounts.pending_invite(db, email)
+            if inv:
+                user = db.scalar(select(User).where(User.shop_id == inv.shop_id, User.email == email)) or User(shop_id=inv.shop_id, email=email, name=name, role=inv.role)
+                db.add(user)
+                inv.accepted_at = accounts.now()
+            if user:
+                user.external_id = ext
+        if user:
+            if not user.active:
+                raise HTTPException(403, "Your account has been disabled by your shop admin.")
+            db.commit()
+            return user
+        domain = email.split("@")[-1] if "@" in email else "shop"
+        shop = _shop_for_tenant(db, "entra:" + claims["tid"], domain)
     user = db.scalar(select(User).where(User.external_id == ext))
     if not user:
         first = db.scalar(select(User.id).where(User.shop_id == shop.id).limit(1)) is None

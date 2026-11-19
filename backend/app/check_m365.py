@@ -57,15 +57,15 @@ def main() -> int:
         line(r2.status_code in (403, 404), f"access policy blocks other mailbox {other} (HTTP {r2.status_code})",
              "the app can read other mailboxes: create the ApplicationAccessPolicy in docs/M365_SETUP.md step 4")
     print("\nWebhook (instant delivery)")
-    if s.graph_webhook_url:
-        line(s.graph_webhook_url.startswith("https://"), f"GRAPH_WEBHOOK_URL = {s.graph_webhook_url}", "must be a public https:// URL")
+    if s.webhook_url:
+        line(s.webhook_url.startswith("https://"), f"Webhook URL = {s.webhook_url}", "must be a public https:// URL")
     else:
         print("  INFO  GRAPH_WEBHOOK_URL not set: new RFQs arrive by 5-minute polling instead of instantly")
     print("\nSign-in")
-    if s.auth_mode == "entra":
+    if s.entra_client_id:
         line(bool(s.entra_client_id and s.entra_tenant_id), "ENTRA_CLIENT_ID and ENTRA_TENANT_ID set", "add them to .env")
     else:
-        print("  INFO  AUTH_MODE is 'dev' (no sign-in). Set AUTH_MODE=entra for the pilot.")
+        print("  INFO  Sign in with Microsoft is off (ENTRA_CLIENT_ID empty); email accounts are used.")
     print("\nResult: " + ("ready" if ok else "fix the FAIL lines above"))
     return 0 if ok else 1
 

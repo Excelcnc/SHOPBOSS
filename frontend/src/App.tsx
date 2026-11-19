@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import { Boxes, History as HistoryIcon, Inbox, Settings as SettingsIcon } from "lucide-react";
 import { api } from "./api";
-import { entraConfigured, signOut } from "./auth";
+import { getConfig, signOut } from "./auth";
 import { useAsync } from "./components/ui";
 import Queue from "./pages/Queue";
 import Rfq from "./pages/Rfq";
@@ -32,7 +32,7 @@ export default function App() {
             </nav>
             <div className="mt-auto space-y-1 px-4 py-4 text-[11px] text-navy-100/70">
               <div>{me.data?.name} · {me.data?.role}</div>
-              {entraConfigured && <button className="underline hover:text-white" onClick={() => signOut()}>Sign out</button>}
+              {!getConfig().dev && <button className="underline hover:text-white" onClick={() => signOut()}>Sign out</button>}
               <div>Mailboxes: {me.data?.integrations?.mailboxes?.length ? me.data.integrations.mailboxes.join(", ") : "none connected"}</div>
               <div>AI extraction: {me.data?.integrations?.ai ? "on" : "off"}</div>
             </div>

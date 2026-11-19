@@ -5,8 +5,7 @@ A web application that helps CNC machine shop estimators quote faster. It reads 
 conservative price per part from the shop's own rates. The estimator can override every number,
 save variants, and send a clean quote: **Part number · Revision · Quantity · Price per part**.
 
-Proprietary software of Excel CNC (see LICENSE). Designed so other shops can be onboarded later: each shop's data is isolated, and a shop is created
-automatically the first time someone from a new Microsoft 365 tenant signs in.
+Proprietary software of Excel CNC (see LICENSE). Other shops can sign up themselves with any email address; each shop's data is isolated.
 
 ## What it does
 
@@ -43,10 +42,12 @@ npm install
 npm run dev     # http://localhost:5173
 ```
 
-With `AUTH_MODE=dev` there is no sign-in; you act as `estimator@example.com` in a demo shop. Try the
+With `AUTH_MODE=dev` there is no sign-in (use `AUTH_MODE=prod` to try accounts locally); you act as `estimator@example.com` in a demo shop. Try the
 files in `samples/` (upload `RFQ_BWP-2026-0418.eml`, or the bracket STEP + PDF).
 
-Tests: `cd backend && pytest` (needs a `cncquote_test` database).
+Tests: `cd backend && pip install -r requirements-dev.txt && pytest` (needs a `cncquote_test` database).
+
+Online: see [docs/RENDER_SETUP.md](docs/RENDER_SETUP.md) (Render Blueprint in `render.yaml`).
 
 Docker: `cp .env.example .env && docker compose up --build` then open http://localhost:8080.
 
@@ -79,6 +80,7 @@ Key code:
 - `frontend/src/pages/PartEstimate.tsx` — the estimator's main screen
 
 ## Documentation
+- [docs/RENDER_SETUP.md](docs/RENDER_SETUP.md) — put the app online (Render)
 - [docs/M365_SETUP.md](docs/M365_SETUP.md) — connect the quoting mailbox and Microsoft sign-in
 - [docs/ESTIMATING.md](docs/ESTIMATING.md) — how prices are calculated, and calibrating with your JobBOSS² data
 - [docs/STATUS.md](docs/STATUS.md) — what works, what needs configuration, known limits

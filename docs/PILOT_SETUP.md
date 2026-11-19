@@ -48,7 +48,7 @@ Needs: Windows 10/11 Pro or Windows Server (or Linux), 16 GB RAM, ~20 GB disk, a
 3. In `.env` fill in:
    - `GRAPH_CLIENT_SECRET` = the secret **Value** from the mailbox app (A1)
    - `GRAPH_CLIENT_STATE` = any long random text
-   - `ENTRA_CLIENT_ID` and `VITE_ENTRA_CLIENT_ID` = the **new sign-in app** client ID (A2)
+   - `ENTRA_CLIENT_ID` = the **new sign-in app** client ID (A2); the web page reads it from the server
    - optional `ANTHROPIC_API_KEY`
 4. In Outlook, create the **RFQ** folder in purchasing@ (top level or under Inbox) and a rule that moves customer RFQs into it.
 5. Start it (first build takes 10–20 minutes):

@@ -85,9 +85,10 @@ function AddMailbox({ graphAvailable, onClose, onAdded }: { graphAvailable: bool
         <p className="mb-3 text-sm text-steel-600">Gmail, a web host or any provider with IMAP. Use an <b>app password</b> (Gmail: Google account › Security › App passwords).
           The password is encrypted and never shown again.</p>
       )}
-      {!graphAvailable && <p className="mb-3 text-xs text-amber-800">Microsoft 365 mailboxes need the mailbox app configured on the server first.</p>}
+      {!graphAvailable && <p className="mb-3 text-xs text-amber-800">Direct Microsoft 365 connection isn't available for your shop yet. Use IMAP (Gmail, Yahoo, iCloud, most web hosts) with an app password,
+        or set a rule in Outlook that forwards RFQs to a mailbox you can connect here.</p>}
       <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2"><label className="label" htmlFor="mb-a">Email address</label><input id="mb-a" className="input" placeholder="purchasing@excel-cnc.com" onChange={set("address")} /></div>
+        <div className="col-span-2"><label className="label" htmlFor="mb-a">Email address</label><input id="mb-a" className="input" placeholder="rfq@yourshop.com" onChange={set("address")} /></div>
         <div><label className="label" htmlFor="mb-f">Folder to watch</label><input id="mb-f" className="input" value={f.folder} onChange={set("folder")} />
           <p className="mt-1 text-[11px] text-steel-500">"inbox" or a folder name like "RFQ" (top level or under Inbox).</p></div>
         <div><label className="label" htmlFor="mb-l">Label (optional)</label><input id="mb-l" className="input" placeholder="e.g. Purchasing" onChange={set("label")} /></div>

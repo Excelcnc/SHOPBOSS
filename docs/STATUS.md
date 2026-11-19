@@ -12,8 +12,15 @@
 - Cost engine, overrides, Save As variants, locked final versions, quote PDF.
 - Shop configuration: rates, machines, material prices, outside processes, pricing policy.
 - History CSV import, similar-job search, won/lost feedback into history, calibration report.
-- Multi-shop data isolation (shop per sign-in tenant).
-- 22 automated backend tests (`cd backend && pytest`), plus a browser walkthrough of all screens.
+- Accounts with any email provider: sign up with email + password, 6-digit code by email, sign in,
+  forgot password, lockout after repeated wrong passwords. Each sign-up gets its own shop with default
+  rates; admins invite teammates from **Shop settings → Team**. Optional "Sign in with Microsoft".
+- Multi-shop data isolation; Microsoft 365 mailbox connections limited to shops proven at
+  `GRAPH_SHOP_DOMAINS`.
+- Database migrations (Alembic), applied automatically on start.
+- Render deployment (`render.yaml`, docs/RENDER_SETUP.md): one service runs web, worker and poller.
+- 38 automated backend tests (`cd backend && pytest`), plus browser walkthroughs (sign-up → first
+  priced RFQ → invite teammate takes under a minute of app time).
 
 ## Implemented, needs your configuration to verify
 
@@ -36,4 +43,8 @@
 - Ribs and straight-edge chamfers are reported as generic faces, not named features.
 - Live material market prices: reference prices are a dated snapshot; enter your supplier prices.
 - JobBOSS² API and Mastercam integration (see ROADMAP).
-- Database migrations: tables are created on startup; Alembic migrations before first production upgrade.
+- Other companies' Microsoft 365 mailboxes: no "Connect Outlook" button yet (needs delegated
+  permissions). Until then they use IMAP or forward RFQs to a mailbox they can connect.
+- Gmail one-click connect (needs Google's security review); IMAP with an app password works today.
+- Export-controlled (ITAR/EAR) data: not suitable for an ordinary cloud host. AI is skipped for such
+  RFQs, but the files are still stored. Tell shops not to upload ITAR technical data.

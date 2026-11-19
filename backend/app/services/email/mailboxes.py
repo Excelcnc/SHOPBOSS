@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...config import get_settings
 from ...crypto import decrypt
 from ...models import IntegrationState, Mailbox
-from .graph import GraphClient, graph_configured, new_client_state
+from .graph import GraphClient, graph_address_allowed, graph_configured, new_client_state
 from .imap import ImapClient
 from .parse import ParsedEmail, looks_like_rfq, parse_eml
 
@@ -100,7 +100,7 @@ def test(mb: Mailbox, client=None) -> dict:
 
 def ensure_subscription(db: Session, mb: Mailbox, client: GraphClient | None = None):
     s = get_settings()
-    if mb.kind != "graph" or not s.graph_webhook_url:
+    if mb.kind != "graph" or not s.webhook_url:
         return None
     c = client or graph_client(mb)
     st = dict(mb.state or {})
@@ -114,7 +114,7 @@ def ensure_subscription(db: Session, mb: Mailbox, client: GraphClient | None = N
             raise KeyError
     except Exception:
         cs = new_client_state()
-        new = c.subscribe(s.graph_webhook_url, cs)
+        new = c.subscribe(s.webhook_url, cs)
         sub = {"id": new["id"], "expirationDateTime": new["expirationDateTime"], "client_state": cs}
     mb.state = {**st, "subscription": {"id": sub["id"], "expirationDateTime": sub["expirationDateTime"], "client_state": sub.get("client_state") or st.get("subscription", {}).get("client_state")}}
     db.commit()
@@ -153,6 +153,10 @@ def poll_all(db: Session) -> dict:
     bootstrap_from_env(db)
     out = {}
     for mb in db.scalars(select(Mailbox).where(Mailbox.active.is_(True))).all():
+        if mb.kind == "graph" and not graph_address_allowed(mb.address):
+            mb.last_error = "Microsoft 365 connection not allowed for this domain on this server (GRAPH_SHOP_DOMAINS)."
+            db.commit()
+            continue
         if mb.kind == "graph":
             try:
                 ensure_subscription(db, mb)

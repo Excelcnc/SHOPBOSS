@@ -539,10 +539,10 @@ def mailbox_dict(m) -> dict:
 @api.get("/mailboxes")
 def list_mailboxes(user: User = Depends(current_user), db: Session = Depends(get_db)):
     from .models import Mailbox
-    from .services.email.graph import graph_configured
+    from .services.email.graph import graph_allowed_for
     rows = db.scalars(select(Mailbox).where(Mailbox.shop_id == user.shop_id).order_by(Mailbox.created_at)).all()
     s = get_settings()
-    return {"graph_available": graph_configured(), "webhook": bool(s.graph_webhook_url), "mailboxes": [mailbox_dict(m) for m in rows]}
+    return {"graph_available": graph_allowed_for(user), "webhook": bool(s.webhook_url), "mailboxes": [mailbox_dict(m) for m in rows]}
 
 
 @api.post("/mailboxes")
@@ -550,7 +550,7 @@ def add_mailbox(body: MailboxBody, user: User = Depends(require_admin), db: Sess
     import re as _re
     from .crypto import encrypt
     from .models import Mailbox
-    from .services.email.graph import graph_configured
+    from .services.email.graph import graph_address_allowed, graph_allowed_for, graph_configured
     from .services.email.imap import guess_host
     addr = (body.address or "").strip().lower()
     if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", addr):
@@ -560,6 +560,8 @@ def add_mailbox(body: MailboxBody, user: User = Depends(require_admin), db: Sess
         raise HTTPException(400, "kind must be graph or imap")
     if kind == "graph" and not graph_configured():
         raise HTTPException(400, "Microsoft 365 mailboxes need the mailbox app configured on the server (GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_CLIENT_SECRET).")
+    if kind == "graph" and not (graph_allowed_for(user) and graph_address_allowed(addr)):
+        raise HTTPException(403, "Direct Microsoft 365 connection isn't available for this mailbox. Connect it with IMAP, or forward RFQs to a mailbox you can connect.")
     if kind == "imap" and not body.imap_password:
         raise HTTPException(400, "Enter the app password for this mailbox.")
     folder = (body.folder or "inbox").strip() or "inbox"

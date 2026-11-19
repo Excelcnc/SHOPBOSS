@@ -1,0 +1,73 @@
+# Render Blueprint: Dashboard > New > Blueprint > pick this repository.
+# Creates the app (web + worker + mailbox poller in one service), a PostgreSQL database and Redis.
+# Values marked sync: false are asked for when you create the Blueprint (leave blank to skip).
+services:
+  - type: web
+    name: cnc-quote
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: standard            # 2 GB memory: 3D analysis needs it
+    region: ohio
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: files
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: AUTH_MODE
+        value: prod
+      - key: DATABASE_URL
+        fromDatabase: { name: cnc-quote-db, property: connectionString }
+      - key: REDIS_URL
+        fromService: { type: keyvalue, name: cnc-quote-redis, property: connectionString }
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SIGNUP_OPEN
+        value: "true"
+      - key: APP_URL              # e.g. https://cnc-quote.onrender.com or your own domain
+        sync: false
+      # Outgoing email for verification codes and invitations (any SMTP service)
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Optional: "Sign in with Microsoft"
+      - key: ENTRA_CLIENT_ID
+        sync: false
+      - key: ENTRA_TENANT_ID
+        sync: false
+      # Optional: Microsoft 365 mailbox intake (docs/M365_SETUP.md)
+      - key: GRAPH_TENANT_ID
+        sync: false
+      - key: GRAPH_CLIENT_ID
+        sync: false
+      - key: GRAPH_CLIENT_SECRET
+        sync: false
+      - key: GRAPH_SHOP_DOMAINS     # only shops proven at these domains may use the mailbox app, e.g. excel-cnc.com
+        sync: false
+      - key: GRAPH_CLIENT_STATE
+        generateValue: true
+      # Optional: AI reading of emails and scanned drawings
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  - type: keyvalue
+    name: cnc-quote-redis
+    plan: starter
+    region: ohio
+    ipAllowList: []           # reachable only from your Render services
+
+databases:
+  - name: cnc-quote-db
+    plan: basic-1gb
+    region: ohio
+    databaseName: cncquote
+    ipAllowList: []

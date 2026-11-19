@@ -1,6 +1,6 @@
-// Thin API client. In dev the X-Dev-User header identifies the estimator; in production the app sends a
-// Microsoft Entra ID bearer token (see src/auth.ts).
-import { getToken } from "./auth";
+// Thin API client. In dev the X-Dev-User header identifies the estimator; otherwise the app sends the
+// session token (email account) or a Microsoft token (see src/auth.ts).
+import { getConfig, getToken, sessionExpired } from "./auth";
 
 export type Json = any;
 
@@ -8,9 +8,10 @@ async function req<T = Json>(method: string, path: string, body?: any, isForm = 
   const headers: Record<string, string> = {};
   const token = await getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  else headers["X-Dev-User"] = localStorage.getItem("devUser") || "estimator@example.com";
+  else if (getConfig().dev) headers["X-Dev-User"] = localStorage.getItem("devUser") || "estimator@example.com";
   if (body && !isForm) headers["Content-Type"] = "application/json";
   const r = await fetch(`/api${path}`, { method, headers, body: isForm ? body : body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && !getConfig().dev) sessionExpired();
   if (!r.ok) {
     let msg = r.statusText;
     try { msg = (await r.json()).detail || msg; } catch { /* not json */ }

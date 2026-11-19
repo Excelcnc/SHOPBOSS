@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AlertTriangle, Inbox, Paperclip, Plus, RefreshCw, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, Inbox, Paperclip, Plus, RefreshCw, Upload, X } from "lucide-react";
 import { api, fmtDate } from "../api";
 import { Badge, Empty, Modal, STATUS, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
@@ -12,6 +12,7 @@ export default function Queue() {
   const [q, setQ] = useState("");
   const [show, setShow] = useState(false);
   const me = useMe();
+  const all = useAsync(() => api.get("/rfqs"), []);
   const list = useAsync(() => api.get(`/rfqs?${new URLSearchParams({ ...(tab ? { status: tab } : {}), ...(q ? { q } : {}) })}`), [tab, q]);
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
@@ -24,6 +25,7 @@ export default function Queue() {
           <button className="btn btn-primary" onClick={() => setShow(true)}><Plus size={14} /> New RFQ</button>
         </div>
       </div>
+      {me && all.data && <GettingStarted hasMailbox={!!me.integrations?.mailboxes?.length} hasRfq={all.data.length > 0} admin={me.role === "admin"} onUpload={() => setShow(true)} />}
       <div className="mb-3 flex gap-1">{TABS.map(([v, l]) => <button key={l} onClick={() => setTab(v)} className={`rounded-md px-3 py-1.5 text-sm ${tab === v ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
       <div className="card overflow-x-auto">
         <table className="w-full">
@@ -90,5 +92,27 @@ function NewRfq({ onClose }: { onClose: () => void }) {
         <div className="col-span-2"><label className="label" htmlFor="n-n">Notes (material, finish, due date…)</label><textarea id="n-n" className="input" rows={3} onChange={set("notes")} /></div>
       </div>
     </Modal>
+  );
+}
+
+
+function GettingStarted({ hasMailbox, hasRfq, admin, onUpload }: { hasMailbox: boolean; hasRfq: boolean; admin: boolean; onUpload: () => void }) {
+  const KEY = "cq_hide_getting_started";
+  const [hidden, setHidden] = useState(() => { try { return localStorage.getItem(KEY) === "1"; } catch { return false; } });
+  if (hidden || (hasMailbox && hasRfq)) return null;
+  const steps: [boolean, string, React.ReactNode][] = [
+    [false, "Check your shop rates", <Link className="text-navy-700 underline" to="/settings?tab=rates">Review rates</Link>],
+    [hasMailbox, "Connect the email where RFQs arrive (Outlook, Gmail, any provider)", <Link className="text-navy-700 underline" to="/settings?tab=email">Connect email</Link>],
+    [hasRfq, "Quote your first RFQ: upload an email or drawings + STEP files", <button className="text-navy-700 underline" onClick={onUpload}>Upload</button>],
+    [false, "Invite your team", <Link className="text-navy-700 underline" to="/settings?tab=team">Invite</Link>],
+  ];
+  return (
+    <div className="card mb-4 p-4">
+      <div className="mb-2 flex items-center"><h2 className="font-semibold">Get started</h2>
+        <button className="ml-auto text-steel-400 hover:text-steel-600" aria-label="Hide" onClick={() => { try { localStorage.setItem(KEY, "1"); } catch { /* ignore */ } setHidden(true); }}><X size={16} /></button></div>
+      <ol className="space-y-1.5 text-sm">{steps.filter((_, i) => admin || i === 2).map(([done, text, action], i) =>
+        <li key={i} className="flex items-center gap-2">{done ? <CheckCircle2 size={16} className="text-emerald-600" /> : <Circle size={16} className="text-steel-300" />}
+          <span className={done ? "text-steel-400 line-through" : ""}>{text}</span>{!done && <span className="ml-1">· {action}</span>}</li>)}</ol>
+    </div>
   );
 }

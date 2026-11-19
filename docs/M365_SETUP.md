@@ -3,7 +3,7 @@
 Two separate things, both done once by a Microsoft 365 admin:
 
 1. **Mailbox intake** — the app reads new mail in the quoting mailbox (e.g. `quotes@yourshop.com`).
-2. **Sign-in** — estimators sign in with their Microsoft work accounts (`AUTH_MODE=entra`).
+2. **Sign-in** — "Sign in with Microsoft" for estimators (optional; email accounts always work).
 
 ## 1. Mailbox intake (Microsoft Graph, application permission)
 
@@ -52,10 +52,8 @@ Estimators can also simply forward RFQs to the quoting mailbox.
 3. For a single shop, set *Accounts in this organizational directory only*. To let other shops
    use the same deployment, choose *Accounts in any organizational directory* — each tenant gets its
    own isolated shop on first sign-in.
-4. `.env`: `AUTH_MODE=entra`, `ENTRA_TENANT_ID=<tenant id or "organizations">`, `ENTRA_CLIENT_ID=<client id>`;
-   frontend build arg `VITE_ENTRA_CLIENT_ID=<client id>`.
-
-   Frontend build settings: `VITE_ENTRA_CLIENT_ID=<sign-in app client id>` and `VITE_ENTRA_TENANT_ID=<tenant id>`.
+4. Server settings: `AUTH_MODE=prod`, `ENTRA_TENANT_ID=<tenant id or "organizations">`, `ENTRA_CLIENT_ID=<client id>`.
+   The web page reads these from the server; nothing to rebuild. Email + password accounts keep working alongside.
 5. Under **Authentication** for the sign-in app, add these Single-page application redirect URIs:
    the pilot's address (e.g. `https://quote.excel-cnc.com`) and `http://localhost:5173` for local testing.
 

@@ -46,6 +46,30 @@ class User(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200), default="")
     role: Mapped[str] = mapped_column(String(20), default="estimator")  # admin | estimator | viewer
     external_id: Mapped[Optional[str]] = mapped_column(String(200), index=True)  # Entra object id / GitHub id
+    # Email + password accounts (any email provider). Passwords are scrypt hashes; codes are hashed too.
+    password_hash: Mapped[Optional[str]] = mapped_column(String(300))
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    code_hash: Mapped[Optional[str]] = mapped_column(String(128))
+    code_purpose: Mapped[Optional[str]] = mapped_column(String(20))  # verify | reset
+    code_expires: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    code_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    token_version: Mapped[int] = mapped_column(Integer, default=0)  # bump to sign out everywhere
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("shop_id", "email"),)
+
+
+class Invite(Base, TimestampMixin):
+    """A teammate invited by a shop admin. Signing up (or in) with this email joins the shop."""
+    __tablename__ = "invites"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    role: Mapped[str] = mapped_column(String(20), default="estimator")
+    invited_by: Mapped[str] = mapped_column(String(200), default="")
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     __table_args__ = (UniqueConstraint("shop_id", "email"),)
 
 

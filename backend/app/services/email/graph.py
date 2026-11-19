@@ -31,6 +31,28 @@ def graph_configured() -> bool:
     return bool(s.graph_tenant_id and s.graph_client_id and s.graph_client_secret)
 
 
+def graph_domains() -> set[str]:
+    return {d.strip().lower().lstrip("@") for d in get_settings().graph_shop_domains.split(",") if d.strip()}
+
+
+def graph_allowed_for(user) -> bool:
+    """May this user's shop connect Microsoft 365 mailboxes through the server's mailbox app?
+    Only people who proved they own an address at one of GRAPH_SHOP_DOMAINS: Microsoft sign-in, or an
+    email account verified with an emailed code."""
+    s = get_settings()
+    if not graph_configured():
+        return False
+    if s.dev:
+        return True
+    domain = (user.email or "").rsplit("@", 1)[-1].lower()
+    proven = (user.external_id or "").startswith("entra:") or bool(user.email_verified)
+    return proven and domain in graph_domains()
+
+
+def graph_address_allowed(address: str) -> bool:
+    return get_settings().dev or address.rsplit("@", 1)[-1].lower() in graph_domains()
+
+
 class GraphClient:
     def __init__(self, tenant: str, client_id: str, secret: str, mailbox: str, folder: str = "inbox", http: httpx.Client | None = None):
         self.tenant, self.client_id, self.secret, self.mailbox = tenant, client_id, secret, mailbox
