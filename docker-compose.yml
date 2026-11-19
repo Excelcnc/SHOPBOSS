@@ -1,17 +1,21 @@
-# Local / single-server deployment: same image as Render (web + API + worker + poller in one container).
-# cp .env.example .env, then: docker compose up --build   ->  http://localhost:8080
+# Run on one computer: same image as Render (web + API + worker + poller in one container).
+# Windows: double-click "Start CNC Quote.cmd" (see docs/LOCAL_SETUP.md). Others: local/start.sh
+name: cnc-quote
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment: { POSTGRES_USER: cnc, POSTGRES_PASSWORD: cnc, POSTGRES_DB: cncquote }
     volumes: [pgdata:/var/lib/postgresql/data]
   redis:
     image: redis:7
+    restart: unless-stopped
   app:
     build: .
+    restart: unless-stopped
     env_file: .env
     environment: { DATABASE_URL: "postgresql+psycopg://cnc:cnc@db:5432/cncquote", REDIS_URL: "redis://redis:6379/0", PORT: "8000" }
-    ports: ["8080:8000"]
+    ports: ["127.0.0.1:8080:8000"]   # this computer only
     volumes: [files:/data]
     depends_on: [db, redis]
 volumes: { pgdata: {}, files: {} }

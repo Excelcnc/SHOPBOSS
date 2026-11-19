@@ -23,7 +23,11 @@ Proprietary software of Excel CNC (see LICENSE). Other shops can sign up themsel
 
 See [docs/STATUS.md](docs/STATUS.md) for exactly what is operational vs. needs configuration.
 
-## Run it locally
+## Run it on your computer (Windows, no programming)
+
+Install Docker Desktop, then double-click **Start CNC Quote.cmd**. Full steps: [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
+## Run it locally for development
 
 Prerequisites: Python 3.12+, Node 20+, PostgreSQL 16, Redis (optional for dev).
 
@@ -49,7 +53,7 @@ Tests: `cd backend && pip install -r requirements-dev.txt && pytest` (needs a `c
 
 Online: see [docs/RENDER_SETUP.md](docs/RENDER_SETUP.md) (Render Blueprint in `render.yaml`).
 
-Docker: `cp .env.example .env && docker compose up --build` then open http://localhost:8080.
+Docker: `cp .env.example .env && docker compose up --build` then open http://localhost:8080 (or `local/start.sh`).
 
 ## Architecture
 
@@ -80,6 +84,7 @@ Key code:
 - `frontend/src/pages/PartEstimate.tsx` — the estimator's main screen
 
 ## Documentation
+- [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md) — run it on your own computer
 - [docs/RENDER_SETUP.md](docs/RENDER_SETUP.md) — put the app online (Render)
 - [docs/M365_SETUP.md](docs/M365_SETUP.md) — connect the quoting mailbox and Microsoft sign-in
 - [docs/ESTIMATING.md](docs/ESTIMATING.md) — how prices are calculated, and calibrating with your JobBOSS² data
