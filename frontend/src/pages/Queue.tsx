@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Circle, Inbox, Paperclip, Plus, RefreshCw, Upload, X } from "lucide-react";
-import { api, fmtDate } from "../api";
+import { api, DEMO, fmtDate } from "../api";
 import { Badge, Empty, Modal, STATUS, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
 
@@ -84,6 +84,7 @@ function NewRfq({ onClose }: { onClose: () => void }) {
         <input ref={pick} type="file" multiple className="hidden" onChange={(e) => setFiles([...files, ...Array.from(e.target.files || [])])} />
         {files.length > 0 && <ul className="mt-3 text-left text-xs">{files.map((x, i) => <li key={i} className="flex justify-between border-t border-steel-100 py-1"><span>{x.name}</span><span className="text-steel-500">{(x.size / 1024).toFixed(0)} KB</span></li>)}</ul>}
       </div>
+      {DEMO && <p className="mb-2 rounded bg-navy-50 px-3 py-2 text-xs text-navy-900">Demo: your browser reads the files and Claude extracts the details on your claude.ai account (you'll be asked to allow it). It can take up to a minute. 3D model files need the full app; parts are priced from the drawing's overall size.</p>}
       <p className="mb-2 text-xs text-steel-500">For loose files (no email), add what you know. Emails are read automatically.</p>
       <div className="grid grid-cols-2 gap-3">
         <div><label className="label" htmlFor="n-c">Customer</label><input id="n-c" className="input" onChange={set("customer_name")} /></div>

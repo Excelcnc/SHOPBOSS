@@ -21,7 +21,7 @@ function DemoBanner({ onReset }: { onReset: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 sm:px-6">
       <b>Demo with sample RFQs.</b>
-      <span>Prices recalculate live. Your changes stay in this tab until you reload; nothing is sent anywhere.</span>
+      <span>Prices recalculate live. Changes stay in this tab until you reload. Files you upload are read in your browser and, when you allow it, by Claude on your claude.ai account; nothing else leaves the page.</span>
       <button className="ml-auto underline hover:no-underline" onClick={onReset}>Reset demo</button>
     </div>
   );

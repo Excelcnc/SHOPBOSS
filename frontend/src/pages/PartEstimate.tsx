@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Copy, History, RotateCcw, ShieldCheck } from "lucide-react";
-import { api, money } from "../api";
+import { api, DEMO, money } from "../api";
 import { Badge, Conf, Modal, Src, toast, useAsync } from "../components/ui";
 import Viewer3D from "../components/Viewer3D";
 import DrawingView from "../components/DrawingView";
 import { useMe } from "../App";
+
+const AskClaude = DEMO ? lazy(() => import("../demo/AskClaude")) : null;
 
 const GROUPS: [string, string][] = [["lead", "Lead time"], ["geometry", "Geometry"], ["material", "Material"], ["time", "Time"], ["process", "Process"], ["complexity", "Complexity"], ["rates", "Rates"], ["outside", "Outside processes"], ["purchased", "Purchased"], ["pricing", "Pricing"], ["price", "Final unit price"]];
 const MACHINES = [["mill3", "3-axis mill"], ["mill4", "4-axis mill"], ["mill5", "5-axis mill"], ["lathe", "Lathe"], ["millturn", "Mill-turn"], ["lathe+mill3", "Lathe + 3-axis mill"]];
@@ -98,6 +100,7 @@ export default function PartEstimate() {
             </section>
           </div>
           <SimilarJobs data={similar.data} cur={cur} />
+          {AskClaude && v && <Suspense fallback={null}><AskClaude part={part} version={v} cur={cur} /></Suspense>}
         </div>
 
         {/* ------------------------------------------------ right: cost panel */}

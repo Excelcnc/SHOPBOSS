@@ -16,7 +16,6 @@ const now = () => new Date().toISOString();
 const uid = () => Math.random().toString(16).slice(2) + Date.now().toString(16);
 class ApiError extends Error {}
 const fail = (msg: string): never => { throw new ApiError(msg); };
-const NEEDS_SERVER = "needs the full app: 3D models and drawings are analysed on the server. In this demo, try the four sample RFQs.";
 
 export function onDemoReset(fn: () => void) { listeners.add(fn); return () => listeners.delete(fn); }
 
@@ -109,8 +108,107 @@ function refreshInputs(v: any, materialCode?: string | null) {
 // ------------------------------------------------------------------ request handler
 export async function demoRequest(method: string, path: string, body?: any): Promise<any> {
   await load();
+  if (S.claudeOn === undefined) S.claudeOn = !!(await (await import("./claude")).getSample());
+  if (method.toUpperCase() === "POST" && path === "/rfqs" && body instanceof FormData) return clone(await createFromUpload(body));
   const res = route(method, path, body);
   return clone(res);
+}
+
+// ------------------------------------------------------------------ uploads (read by Claude in the viewer's account)
+const CATS = new Set(["dimension", "diameter", "thread", "fit", "gdt", "finish", "coating", "heat_treat", "note", "standard"]);
+
+async function createFromUpload(form: FormData) {
+  const { readUploads, askClaude } = await import("./intake");
+  const { toast } = await import("../components/ui");
+  const files = form.getAll("files").filter((f): f is File => f instanceof File);
+  const field = (k: string) => String(form.get(k) || "").trim();
+  if (!files.length) fail("Add the customer's email (.eml) or drawings (PDF, PNG, JPG) to create an RFQ in the demo.");
+  const step = (t: string) => toast(t);
+  const parsed = await readUploads(files, step);
+  const { data, note, usedImages } = await askClaude(parsed, S.shop.materials, S.shop.processes, step);
+  const ex = data || {};
+
+  // RFQ shell
+  const n = Math.max(0, ...Object.values<any>(S.rfq).map((r) => +String(r.number).split("-").pop()! || 0)) + 1;
+  const id = uid(), at = now();
+  const src = (v: any, fromImage = false) => ({ value: v, confidence: 0.8, source: fromImage ? "ai-vision" : "ai-email", evidence: "read by Claude" });
+  const extracted: any = {};
+  const qtyField = field("quantities").split(/[;,\s]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0);
+  const quantities = qtyField.length ? qtyField : (ex.quantities || []).map((x: any) => Math.trunc(+x)).filter((x: number) => x > 0);
+  for (const [k, v] of Object.entries<any>({ customer_name: ex.customer_name, customer_contact: ex.customer_contact, customer_rfq_no: ex.customer_rfq_no,
+    quote_due: ex.quote_due, due_date: ex.due_date, summary: ex.summary, requirements: ex.requirements?.length ? ex.requirements : null })) if (v) extracted[k] = src(v);
+  if (quantities.length) extracted.quantities = qtyField.length ? { value: quantities, confidence: 1, source: "manual", evidence: "entered" } : src(quantities);
+  if (field("customer_name")) extracted.customer_name = { value: field("customer_name"), confidence: 1, source: "manual", evidence: "entered" };
+
+  // attachments
+  const attachments = parsed.files.map((f) => {
+    const a = { id: uid(), filename: f.name, kind: f.kind, ext: f.ext, size: f.size };
+    if (f.dataUrl) S.page[a.id] = f.dataUrl;
+    if (f.fileUrl) S.file[a.id] = f.fileUrl;
+    return { a, f };
+  });
+  const cat = catalog();
+  const parts: any[] = [];
+  const claudeParts = (ex.parts || []).filter((p: any) => p && (p.part_number || p.envelope_mm));
+  const drawingsAtt = attachments.filter((x) => x.f.kind === "drawing");
+  const models = attachments.filter((x) => x.f.kind === "model");
+  const specs: any[] = claudeParts.length ? claudeParts : drawingsAtt.concat(models).map((x) => ({ part_number: x.f.name.replace(/\.[^.]+$/, ""), source_file: x.f.name }));
+  for (const sp of specs) {
+    const stem = String(sp.part_number || "").toUpperCase();
+    const dwg = drawingsAtt.find((x) => x.f.name === sp.source_file) || drawingsAtt.find((x) => stem && x.f.name.toUpperCase().includes(stem)) || (specs.length === 1 ? drawingsAtt[0] : undefined);
+    const model = models.find((x) => stem && x.f.name.toUpperCase().includes(stem));
+    const fromImage = !!dwg && !dwg.f.text;
+    const items = (sp.callouts || []).slice(0, 30).map((c: any, i: number) => ({
+      id: "C" + (i + 1), cat: CATS.has(c.cat) ? c.cat : "note", label: c.label || c.cat || "Note", value: String(c.value ?? ""),
+      band: typeof c.tol_band_mm === "number" && c.tol_band_mm > 0 ? c.tol_band_mm : undefined, ra: typeof c.ra_um === "number" && c.ra_um > 0 ? c.ra_um : undefined,
+      conf: Math.max(0.4, Math.min(0.95, sp.confidence ?? 0.75)), src: fromImage ? "ai-vision" : "ai+text", page: 1, bbox: null }));
+    const text = [dwg?.f.text, ...(sp.finishes || []), ...items.map((i: any) => i.value), parsed.email?.body].join(" ").toUpperCase();
+    const procs = S.shop.processes.filter((pr: any) => (pr.keywords || []).some((k: string) => text.includes(String(k).toUpperCase())))
+      .map((pr: any) => ({ name: pr.name, basis: pr.basis, price: pr.price, lot_charge: pr.lot_charge, markup_pct: pr.markup_pct, lead_days: pr.lead_days,
+        keywords: pr.keywords, supplier: pr.supplier, unpriced: false, source: "drawing (read by Claude)" }));
+    const code = S.shop.materials.some((m: any) => m.code === sp.material_code) ? sp.material_code : null;
+    const env = Array.isArray(sp.envelope_mm) && sp.envelope_mm.length === 3 && sp.envelope_mm.every((x: any) => +x > 0) ? sp.envelope_mm.map((x: any) => +(+x).toFixed(2)) : null;
+    const warnings: string[] = [];
+    if (model) warnings.push(`3D model ${model.f.name} attached: geometry analysis needs the full app, so this part is priced from the drawing's overall size.`);
+    if (!env) warnings.push("Overall size not found. Enter the part envelope (L x W x H) under Calculated values to price it.");
+    if (!code) warnings.push(sp.material_text ? `Material "${sp.material_text}" isn't in your materials list: priced as stainless 316 until you pick one.` : "Material not found: priced as stainless 316 until you pick one.");
+    const partId = uid(), quoteId = uid(), verId = uid();
+    const inputs = { geometry: { size: [0, 0, 0], features: [] }, drawing: { items, meta: {} }, material: materialInput(code), quantities: quantities.length ? quantities : [1],
+      rates: cat.rates, machines: cat.machines, processes: procs, purchased: [], settings: cat.settings, part: { part_number: sp.part_number || "PART", revision: sp.revision || "" } };
+    const overrides: any = env ? { "geometry.size_mm": { value: env.join(" x "), by: "claude", at, reason: `overall size read from ${dwg?.f.name || "the drawing"} by Claude` } } : {};
+    const v = { id: verId, quote_id: quoteId, number: 1, label: "Original", parent_version_id: null, status: "draft", inputs, overrides, result: estimate(inputs, overrides), created_at: at, updated_at: at };
+    S.quote[quoteId] = { id: quoteId, part_id: partId, rfq_id: id, versions: [v] };
+    parts.push({ id: partId, part_number: sp.part_number || "PART", revision: sp.revision || "", description: sp.description || "", kind: "machined", parent_part_id: null,
+      qty_per_parent: 1, model_attachment_id: model?.a.id || null, drawing_attachment_id: dwg?.a.id || null,
+      match: dwg ? { score: 0.8, why: ["paired by Claude"], drawing: dwg.a.id } : {}, cad: {}, has_mesh: false, drawing: { items, meta: {} },
+      material_code: code, material_source: { code, origin: "read by Claude", evidence: sp.material_text || "", confidence: sp.confidence ?? 0.75, conflicts: [] },
+      processes: procs, warnings: [...warnings, ...((ex.warnings || []) as string[]).slice(0, 4)], purchased: {}, quote_id: quoteId });
+  }
+  if (ex.parts?.length) {
+    const img = !drawingsAtt.some((x) => x.f.text);
+    const uniq = (a: any[]) => [...new Set(a.filter(Boolean).map(String))];
+    extracted.part_numbers = src(parts.map((p) => p.part_number).join(", "), img);
+    const revs = uniq(claudeParts.map((p: any) => p.revision)), mats = uniq(claudeParts.map((p: any) => p.material_text)), fin = uniq(claudeParts.flatMap((p: any) => p.finishes || []));
+    if (revs.length) extracted.revision = src(revs.join(", "), img);
+    if (mats.length) extracted.material = src(mats.join(", "), img);
+    if (fin.length) extracted.special_processes = src(fin, img);
+  }
+  const customer = field("customer_name") || ex.customer_name || "";
+  const rfq: any = { id, number: `RFQ-${new Date().getFullYear()}-${String(n).padStart(4, "0")}`, status: "new", customer_name: customer,
+    customer_contact: ex.customer_contact || "", customer_email: field("customer_email") || ex.customer_email || parsed.email?.fromEmail || "", customer_rfq_no: ex.customer_rfq_no || "",
+    due_date: ex.due_date || null, created_at: at, analysis_status: "done", analysis_error: null, assigned_to: null,
+    subject: field("subject") || parsed.email?.subject || parts.map((p) => p.part_number).join(", "), extracted,
+    email: parsed.email ? { subject: parsed.email.subject, from: parsed.email.from, received_at: at, body: parsed.email.body, source: "upload", mailbox: "" } : null,
+    attachments: attachments.map((x) => x.a), parts, outputs: [], activity: [] };
+  if (field("notes")) rfq.extracted.notes = { value: field("notes"), confidence: 1, source: "manual", evidence: "entered" };
+  activity(rfq, "created", { source: "upload", attachments: attachments.length });
+  activity(rfq, "analyzed", { ai: !!data, images: usedImages, parts: parts.length, note });
+  S.rfq[id] = rfq;
+  S.rfqs.unshift({ id, number: rfq.number, status: "new", customer_name: customer, customer_contact: rfq.customer_contact, customer_email: rfq.customer_email,
+    customer_rfq_no: rfq.customer_rfq_no, due_date: rfq.due_date, created_at: at, analysis_status: "done", analysis_error: null, assigned_to: null,
+    subject: rfq.subject, parts: parts.length, priced: 0, warnings: parts.reduce((s, p) => s + p.warnings.length, 0), attachments: attachments.length });
+  if (note) toast(note);
+  return [{ id, number: rfq.number }];
 }
 
 function route(method: string, fullPath: string, b: any): any {
@@ -128,7 +226,8 @@ function route(method: string, fullPath: string, b: any): any {
   };
   let m: Record<string, string> | null;
 
-  if (is("GET", "/me")) return { ...S.me, integrations: { ...S.me.integrations, mailboxes: S.mailboxes.mailboxes.filter((x: any) => x.active).map((x: any) => x.address) } };
+  if (is("GET", "/me")) return { ...S.me, integrations: { ...S.me.integrations, ai: S.claudeOn ? "on (Claude, your claude.ai account)" : false,
+    mailboxes: S.mailboxes.mailboxes.filter((x: any) => x.active).map((x: any) => x.address) } };
   if (is("GET", "/config")) return { dev: true, signup_open: false, signup_domains: [], email_verification: false, microsoft: null };
 
   // RFQs
@@ -139,7 +238,6 @@ function route(method: string, fullPath: string, b: any): any {
       .filter(({ r, s }) => !text || (JSON.stringify(s) + " " + r.parts.map((p: any) => p.part_number).join(" ")).toLowerCase().includes(text))
       .sort((a, b2) => (a.s.created_at < b2.s.created_at ? 1 : -1)).map(({ s }) => s);
   }
-  if (is("POST", "/rfqs")) return fail("Creating an RFQ from your own files " + NEEDS_SERVER);
   if ((m = is("GET", "/rfqs/:id"))) return detail(S.rfq[m.id] || fail("RFQ not found"));
   if ((m = is("PATCH", "/rfqs/:id"))) {
     const r = S.rfq[m.id] || fail("RFQ not found");
@@ -151,7 +249,7 @@ function route(method: string, fullPath: string, b: any): any {
     return { ok: true };
   }
   if ((m = is("POST", "/rfqs/:id/analyze"))) return { ok: true };
-  if ((m = is("POST", "/rfqs/:id/files"))) return fail("Adding files " + NEEDS_SERVER);
+  if ((m = is("POST", "/rfqs/:id/files"))) return fail("In the demo, add files by creating a new RFQ with them (New RFQ on the queue).");
   if ((m = is("DELETE", "/rfqs/:id"))) { delete S.rfq[m.id]; return { ok: true }; }
 
   // parts
@@ -290,14 +388,18 @@ function route(method: string, fullPath: string, b: any): any {
 const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 
 /** What "open" shows for a file path: an image (drawing page) or an HTML quote preview. */
-export async function demoFile(path: string): Promise<{ kind: "image" | "html"; content: string; title: string }> {
+export type DemoFile = { kind: "image" | "html"; content: string; title: string; download?: { filename: string; make: () => Promise<Blob>; label: string } };
+
+export async function demoFile(path: string): Promise<DemoFile> {
   await load();
   let m = path.match(/^\/attachments\/([^/]+)\/page\/1\.png$/);
   if (m) return { kind: "image", content: S.page[m[1]] || fail("No drawing preview"), title: "Drawing" };
   m = path.match(/^\/attachments\/([^/]+)\/file$/);
   if (m) {
     const att = Object.values<any>(S.rfq).flatMap((r) => r.attachments).find((a: any) => a.id === m![1]);
-    if (S.page[m[1]]) return { kind: "image", content: S.page[m[1]], title: att?.filename || "Drawing" };
+    const orig = S.file[m[1]];
+    const download = orig ? { filename: att?.filename || "drawing", label: "Download original", make: async () => (await import("./claude")).dataUrlToBlob(orig) } : undefined;
+    if (S.page[m[1]]) return { kind: "image", content: S.page[m[1]], title: att?.filename || "Drawing", download };
     fail(`${att?.filename || "This file"} opens in the full app (3D model files are shown in the part's 3D view here).`);
   }
   m = path.match(/^\/outputs\/([^/]+)\/pdf$/);
@@ -306,13 +408,14 @@ export async function demoFile(path: string): Promise<{ kind: "image" | "html"; 
     const r = S.rfq[o.rfq_id];
     const money = (x: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: S.shop.currency || "USD" }).format(x);
     const rows = o.lines.map((l: any) => `<tr><td>${esc(l.part_number)}</td><td>${esc(l.revision || "-")}</td><td class="r">${l.qty.toLocaleString()}</td><td class="r">${money(l.unit_price)}</td><td class="r">${money(l.extended)}</td><td>${esc(l.lead_time)}</td></tr>`).join("");
-    return { kind: "html", title: `Quotation ${o.quote_number}`, content: `
+    const download = { filename: `${o.quote_number}.pdf`, label: "Download PDF", make: async () => (await import("./pdf")).quotePdf(o, S.shop, r) };
+    return { kind: "html", title: `Quotation ${o.quote_number}`, download, content: `
       <div class="q"><h2>${esc(S.shop.name)}</h2><h3>Quotation ${esc(o.quote_number)}</h3>
       <p>Date: ${new Date(o.created_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })} · Valid until: ${esc(o.valid_until)}</p>
       <p>Customer: ${esc(r?.customer_name)} · Attn: ${esc(r?.customer_contact)}</p><p>Your reference: ${esc(r?.customer_rfq_no || r?.number)}</p>
       <div class="tw"><table><thead><tr><th>Part number</th><th>Rev</th><th class="r">Qty</th><th class="r">Price per part</th><th class="r">Extended</th><th>Lead time</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${o.notes ? `<p>${esc(o.notes).replace(/\n/g, "<br>")}</p>` : ""}
-      <p class="note">This is how the customer PDF lays out. The installed app creates the actual PDF file.</p></div>` };
+      <p class="note">Preview of the customer quote. Download PDF saves the file you send to the customer.</p></div>` };
   }
   return fail("This file opens in the full app.");
 }

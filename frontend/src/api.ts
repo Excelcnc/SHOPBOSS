@@ -9,7 +9,7 @@ export const DEMO = import.meta.env.VITE_DEMO === "1";
 async function req<T = Json>(method: string, path: string, body?: any, isForm = false): Promise<T> {
   if (DEMO) {
     const { demoRequest } = await import("./demo/api");
-    return demoRequest(method, path, isForm ? undefined : body);
+    return demoRequest(method, path, body);
   }
   const headers: Record<string, string> = {};
   const token = await getToken();

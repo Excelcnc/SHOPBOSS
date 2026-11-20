@@ -27,7 +27,7 @@ export default function Rfq() {
       <Link to="/" className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> Queue</Link>
       <div className="mb-5 flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1"><div className="font-mono text-sm text-steel-500">{d.number}{d.customer_rfq_no && ` · customer ref ${d.customer_rfq_no}`}</div>
-          <h1 className="text-xl font-semibold">{d.customer_name || "Unknown customer"} <span className="font-normal text-steel-500">— {d.email?.subject}</span></h1></div>
+          <h1 className="text-xl font-semibold">{d.customer_name || "Unknown customer"} {(d.email?.subject || d.subject) && <span className="font-normal text-steel-500">— {d.email?.subject || d.subject}</span>}</h1></div>
         <select className="input !w-auto" value={d.status} onChange={async (e) => { await api.patch(`/rfqs/${id}`, { status: e.target.value }); r.reload(); }} aria-label="Status">
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <button className="btn" onClick={async () => { await api.post(`/rfqs/${id}/analyze`); toast("Re-analysing"); r.reload(); }}><RefreshCw size={14} /> Re-analyse</button>

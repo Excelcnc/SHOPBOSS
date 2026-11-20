@@ -1,5 +1,9 @@
 // Shows a drawing page or a quote preview over the app (the demo can't open new windows).
-export function showViewer(f: { kind: "image" | "html"; content: string; title: string }) {
+import type { DemoFile } from "./api";
+import { getDownloads, offerDownload } from "./claude";
+import { toast } from "../components/ui";
+
+export function showViewer(f: DemoFile) {
   document.getElementById("demo-viewer")?.remove();
   const wrap = document.createElement("div");
   wrap.id = "demo-viewer";
@@ -16,7 +20,22 @@ export function showViewer(f: { kind: "image" | "html"; content: string; title: 
   const close = document.createElement("button");
   close.className = "btn btn-sm";
   close.textContent = "Close";
-  head.append(h, close);
+  head.append(h);
+  if (f.download) {
+    const dl = document.createElement("button");
+    dl.className = "btn btn-sm btn-primary";
+    dl.textContent = f.download.label;
+    dl.hidden = true;  // shown once this view can offer downloads
+    getDownloads().then((d) => { dl.hidden = !d; });
+    dl.onclick = async () => {
+      dl.disabled = true;
+      try { toast(await offerDownload(f.download!.filename, await f.download!.make())); }
+      catch { toast("Couldn't create the file."); }
+      finally { dl.disabled = false; }
+    };
+    head.append(dl);
+  }
+  head.append(close);
   const body = document.createElement("div");
   body.className = "overflow-auto p-4";
   if (f.kind === "image") {
