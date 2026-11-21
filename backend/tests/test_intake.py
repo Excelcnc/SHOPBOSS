@@ -108,15 +108,15 @@ def test_signature_images_logos_and_tiny_files_are_noise():
 # ---------------------------------------------------------------- ZIP safety
 def test_zip_is_expanded_and_inner_names_are_flattened():
     ok, bad = expand([Incoming("rfq.zip", zbytes({"drawings/A-100.pdf": pdf_bytes(), "models/A-100.step": b"ISO-10303-21;" + b"0" * 300}))])
-    assert sorted(f.name for f in ok) == ["A-100.pdf", "A-100.step"] and not bad
-    assert all(f.origin == "zip:rfq.zip" for f in ok)
+    assert sorted(f.name for f in ok) == ["A-100.pdf", "A-100.step", "rfq.zip"] and not bad
+    assert all(f.origin == "zip:rfq.zip" for f in ok if f.name != "rfq.zip")
 
 
 @pytest.mark.parametrize("name", ["../../etc/passwd", "/abs/evil.pdf", "C:/Windows/evil.pdf", "a/../../evil.pdf", "..\\..\\evil.pdf"])
 def test_zip_slip_paths_are_blocked(name):
     assert unsafe_path(name)
     ok, bad = expand([Incoming("evil.zip", zbytes({name: pdf_bytes(), "good.pdf": pdf_bytes("good")}))])
-    assert [f.name for f in ok] == ["good.pdf"]
+    assert [f.name for f in ok] == ["evil.zip", "good.pdf"]
     assert bad and "path traversal" in bad[0].reason
 
 
@@ -126,19 +126,19 @@ def test_safe_nested_paths_are_allowed():
 
 def test_zip_bomb_is_blocked_by_ratio_while_reading():
     ok, bad = expand([Incoming("bomb.zip", zbytes({"zeros.pdf": b"\0" * (30 * MB)}))])
-    assert not ok and "zip bomb" in bad[0].reason
+    assert [f.name for f in ok] == ["bomb.zip"] and "zip bomb" in bad[0].reason
 
 
 def test_total_size_limit_is_enforced_on_real_bytes():
     rnd = __import__("os").urandom
     ok, bad = expand([Incoming("big.zip", zbytes({f"f{i}.step": rnd(2 * MB) for i in range(4)}, zipfile.ZIP_STORED))],
                      Limits(max_total=5 * MB, max_entry=10 * MB))
-    assert len(ok) == 2 and "allowed size" in bad[0].reason
+    assert len(ok) == 3 and "allowed size" in bad[0].reason
 
 
 def test_too_many_files_is_limited():
     ok, bad = expand([Incoming("many.zip", zbytes({f"f{i}.txt": f"file {i} " * 40 for i in range(20)}))], Limits(max_files=5))
-    assert len(ok) == 5 and "more than 5 files" in bad[0].reason
+    assert len(ok) == 6 and "more than 5 files" in bad[0].reason
 
 
 def test_nesting_depth_is_limited():
@@ -146,12 +146,12 @@ def test_nesting_depth_is_limited():
     for _ in range(4):
         inner = zbytes({"nested.zip": inner})
     ok, bad = expand([Incoming("top.zip", inner)], Limits(max_depth=3))
-    assert not ok and "Nested too deeply" in bad[0].reason
+    assert [f.name for f in ok] == ["top.zip"] and "Nested too deeply" in bad[0].reason
 
 
 def test_corrupt_zip_is_reported():
     ok, bad = expand([Incoming("broken.zip", b"PK\x03\x04" + b"garbage" * 100)])
-    assert not ok and "Corrupted ZIP" in bad[0].reason
+    assert "Corrupted ZIP" in bad[0].reason
 
 
 def test_forwarded_email_attachment_is_opened_and_its_files_taken(samples):

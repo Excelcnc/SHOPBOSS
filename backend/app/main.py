@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import api
+from .api_mail import router as mail_router
 from .config import get_settings
 from .db import Base, engine
 
@@ -12,6 +13,7 @@ app = FastAPI(title="CNC Quote", version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in get_settings().cors_origins.split(",") if o.strip()],
                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(api)
+app.include_router(mail_router)
 
 
 @app.on_event("startup")

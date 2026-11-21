@@ -200,7 +200,7 @@ def _wetransfer_direct(http: httpx.Client, url: str, resolve) -> str:
 def parse_portal(provider: str, url: str, subject: str, body: str) -> dict:
     """Pull RFQ details out of a portal notice. Text is data only, never instructions."""
     text = f"{subject}\n{body}"
-    rfq = re.search(r"(?i)\b(?:RFQ|RFP|quote request|request)\s*(?:#|no\.?|number|id)?\s*[:\-]?\s*([A-Z0-9][A-Z0-9\-_/]{2,30})", text)
+    rfq = re.search(r"(?i)\b(?:RFQ|RFP|quote request|request)\s*(?:#|no\.?|number|id)?\s*[:\-]?\s*(?=[A-Z0-9\-_/]*\d)([A-Z0-9][A-Z0-9\-_/]{2,30})", text)
     due = re.search(r"(?i)\b(?:due|deadline|respond by|closes?|closing date|quote by)\s*(?:date)?\s*[:\-]?\s*([A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})", text)
     buyer = re.search(r"(?im)^\s*(?:buyer|from|customer|company)\s*:\s*(.{2,80})$", body or "")
     return {"portal": provider, "url": url, "rfq_no": rfq.group(1) if rfq else "", "due": due.group(1) if due else "",

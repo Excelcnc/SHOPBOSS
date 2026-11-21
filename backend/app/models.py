@@ -286,7 +286,8 @@ class Mailbox(Base, TimestampMixin):
     last_error: Mapped[str] = mapped_column(Text, default="")
     linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     backfill_days: Mapped[int] = mapped_column(Integer, default=0)
-    keywords: Mapped[str] = mapped_column(Text, default="")            # optional extra filter; empty = every message with files or links
+    # None = default RFQ keywords; "" = every message with files or links (dedicated quoting mailbox)
+    keywords: Mapped[Optional[str]] = mapped_column(Text, default=None)
     state: Mapped[dict] = mapped_column(JSONType, default=dict)        # gmail history id / graph delta link
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     failures: Mapped[int] = mapped_column(Integer, default=0)

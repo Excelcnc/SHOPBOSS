@@ -23,6 +23,8 @@ from .services.drawing.extract import image_to_pdf, render_page_png
 from .services.email.parse import ParsedEmail, extract_fields, parse_email_file
 from .services.pipeline import add_files, audit, create_rfq_from_email
 from .services.shopdata import shop_catalog
+from .api_mail import attachment_dict, guard
+from .services.intake.files import PREVIEWABLE
 
 api = APIRouter(prefix="/api")
 
@@ -38,8 +40,12 @@ def own(obj, user: User):
 def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
     shop = db.get(Shop, user.shop_id)
     s = get_settings()
-    return {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "shop": {"id": shop.id, "name": shop.name, "currency": shop.currency},
+    from .models import Mailbox
+    linked = db.scalars(select(Mailbox.address).where(Mailbox.shop_id == user.shop_id, Mailbox.status != "disabled")).all()
+    return {"id": user.id, "email": user.email, "name": user.name, "role": user.role, "export_ok": user.export_ok,
+            "shop": {"id": shop.id, "name": shop.name, "currency": shop.currency},
             "integrations": {"graph": bool(s.graph_client_id and s.graph_mailbox), "graph_mailbox": s.graph_mailbox, "imap": bool(s.imap_host),
+                             "mailboxes": list(linked),
                              "ai": bool(s.anthropic_api_key and s.ai_enabled), "auth": s.auth_mode}}
 
 
@@ -222,7 +228,7 @@ def get_rfq(rid: str, user: User = Depends(current_user), db: Session = Depends(
     outputs = db.scalars(select(QuoteOutput).where(QuoteOutput.rfq_id == r.id).order_by(QuoteOutput.created_at.desc())).all()
     return {**rfq_summary(db, r), "extracted": r.extracted,
             "email": {"subject": em.subject, "from": f"{em.sender_name} <{em.sender_email}>", "received_at": em.received_at.isoformat(), "body": em.body, "source": em.source} if em else None,
-            "attachments": [{"id": a.id, "filename": a.filename, "kind": a.kind, "ext": a.ext, "size": a.size} for a in r.attachments],
+            "attachments": [attachment_dict(a) for a in r.attachments],
             "parts": parts, "outputs": [{"id": o.id, "quote_number": o.quote_number, "lines": o.lines, "valid_until": o.valid_until, "created_at": o.created_at.isoformat()} for o in outputs],
             "activity": [{"action": a.action, "detail": a.detail, "at": a.at.isoformat(), "user_id": a.user_id} for a in db.scalars(select(AuditLog).where(AuditLog.entity_id == r.id).order_by(AuditLog.at.desc()).limit(50))]}
 
@@ -299,14 +305,22 @@ def delete_rfq(rid: str, user: User = Depends(require_admin), db: Session = Depe
 # ------------------------------------------------------------------ files
 @api.get("/attachments/{aid}/file")
 def get_file(aid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    a = own(db.get(Attachment, aid), user)
-    mt = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}.get(a.ext, "application/octet-stream")
-    return Response(storage.get(a.storage_key), media_type=mt, headers={"Content-Disposition": f'inline; filename="{a.filename}"'})
+    a = db.get(Attachment, aid)
+    guard(db, user, a, "file")
+    if not a.stored:
+        raise HTTPException(409, a.status_reason or "The file is not stored yet")
+    from urllib.parse import quote
+    mt = a.mime if a.ext in PREVIEWABLE and a.mime else "application/octet-stream"
+    return Response(storage.get(a.storage_key), media_type=mt, headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(a.filename)}",
+                                                                        "X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"})
 
 
 @api.get("/attachments/{aid}/page/{page}.png")
 def get_page(aid: str, page: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    a = own(db.get(Attachment, aid), user)
+    a = db.get(Attachment, aid)
+    guard(db, user, a, "page")
+    if not a.stored:
+        raise HTTPException(409, a.status_reason or "The file is not stored yet")
     data = storage.get(a.storage_key)
     if a.ext == "pdf":
         png = render_page_png(data, page, 2400)

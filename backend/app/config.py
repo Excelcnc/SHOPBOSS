@@ -35,6 +35,21 @@ class Settings(BaseSettings):
     ai_model: str = "claude-opus-5-5"
     ai_enabled: bool = True
 
+    # Linked mailboxes (read-only OAuth). Tokens are encrypted with TOKEN_ENCRYPTION_KEY (a Fernet key:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())").
+    token_encryption_key: str = ""
+    file_link_secret: str = ""                 # signs short-lived file links; falls back to TOKEN_ENCRYPTION_KEY
+    file_link_ttl_s: int = 300
+    public_base_url: str = "http://localhost:8000"   # where /api is reachable (OAuth redirect URIs)
+    app_url: str = "http://localhost:5173"           # the web app (where OAuth sends the user back)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    ms_oauth_client_id: str = ""               # Entra app with delegated Mail.Read (per-user mailbox linking)
+    ms_oauth_client_secret: str = ""
+    ms_oauth_tenant: str = "organizations"
+    poll_interval_s: int = 300                 # scheduled mailbox check (5 minutes)
+    max_backfill_days: int = 30
+
     max_attachment_mb: int = 50
     # which shop the configured mailbox belongs to: "entra:<tenant id>" in production, "dev:default" locally
     intake_tenant_key: str = "dev:default"

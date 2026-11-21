@@ -120,6 +120,8 @@ def _expand(f: Incoming, depth: int, budget: _Budget, ok: list, bad: list):
         bad.append(Rejected(f.name, f"Nested too deeply (more than {budget.lim.max_depth} levels)", f.origin))
         return
     if container == "zip":
+        if depth == 0:
+            ok.append(f)  # keep the original archive as received
         _unzip(f, depth, budget, ok, bad)
     elif container == "email":
         _attached_email(f, depth, budget, ok, bad)
