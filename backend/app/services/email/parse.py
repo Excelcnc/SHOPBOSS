@@ -19,7 +19,9 @@ class ParsedEmail:
     subject: str
     body: str
     received_at: datetime
-    attachments: list[tuple[str, bytes]] = field(default_factory=list)
+    attachments: list = field(default_factory=list)       # (name, bytes) tuples or intake.files.Incoming
+    thread_id: str = ""                                    # Gmail threadId / Graph conversationId / References root
+    remote_id: str = ""                                    # provider message id, to fetch the files again
 
 
 def _html_to_text(html: str) -> str:

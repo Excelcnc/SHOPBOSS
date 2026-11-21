@@ -20,6 +20,8 @@ from .email.parse import ParsedEmail, extract_fields
 from .shopdata import shop_catalog
 from .similarity import part_vector
 
+from ..config import get_settings
+
 log = logging.getLogger(__name__)
 MODEL_EXT = {"step", "stp", "iges", "igs", "stl", "sldprt", "sldasm", "x_t", "x_b", "ipt", "iam", "prt", "catpart", "catproduct"}
 DRAWING_EXT = {"pdf", "png", "jpg", "jpeg", "tif", "tiff", "dxf", "dwg", "slddrw"}
@@ -49,41 +51,126 @@ def next_rfq_number(db: Session, shop_id: str) -> str:
     return f"RFQ-{y}-{count + 1:04d}"
 
 
-def add_files(db: Session, rfq: Rfq, files: list[tuple[str, bytes]]):
-    import io
-    import zipfile
-    for name, data in files:
+EXPORT_RE = re.compile(r"\bITAR\b|\bEAR99\b|\bEAR\s+controlled|export[- ]control(?:led)?|\bCUI\b|controlled unclassified|22\s*CFR\s*12[0-9]", re.I)
+
+
+def _revision_base(name: str) -> str:
+    base = name.rsplit(".", 1)[0]
+    return _norm_pn(re.sub(r"(?i)[_\-\s.]*(rev(ision)?|r)[_\-\s.]*[a-z0-9]{1,2}$", "", base))
+
+
+def add_files(db: Session, rfq: Rfq, files: list, placeholder: Attachment | None = None, *, source: str = "upload",
+              email_id: str | None = None, mailbox_id: str | None = None, sender_email: str = "") -> list[Attachment]:
+    """The one way files enter an RFQ: manual upload, email (Graph, Gmail, IMAP), links and portals all call this.
+
+    Each file is type-checked and size-capped, ZIPs and attached emails are expanded safely, noise
+    (signature images, logos, tiny files) is skipped, and duplicates are dropped by SHA-256. The
+    original bytes are stored untouched. `placeholder` is an attachment row created while the bytes
+    were being fetched; it is filled in with the first file instead of adding a new row.
+    """
+    from .intake.archive import expand
+    from .intake.files import Incoming, check, is_noise, safe_name
+    max_bytes = get_settings().max_attachment_mb * 2**20
+    incoming = [f if isinstance(f, Incoming) else Incoming(f[0], f[1], origin=source) for f in files]
+    flat, rejected = expand(incoming)
+    itar = bool((rfq.extracted or {}).get("itar", {}).get("value"))
+    out: list[Attachment] = []
+
+    def row() -> Attachment:
+        nonlocal placeholder
+        if placeholder is not None:
+            a, placeholder = placeholder, None
+            return a
+        a = Attachment(shop_id=rfq.shop_id, source=source, email_id=email_id, mailbox_id=mailbox_id, sender_email=sender_email)
+        rfq.attachments.append(a)
+        return a
+
+    for f in flat:
+        name = safe_name(f.name)
+        noise = is_noise(f)
+        if noise:
+            log.info("skipped noise attachment (%s)", noise)
+            continue
+        v = check(f, max_bytes)
         kind, ext = classify(name)
-        if kind == "archive":
-            try:
-                with zipfile.ZipFile(io.BytesIO(data)) as z:
-                    inner = [(i.filename.split("/")[-1], z.read(i)) for i in z.infolist() if not i.is_dir() and i.file_size < 200 * 2**20 and not i.filename.startswith("__MACOSX")]
-                add_files(db, rfq, inner)
-            except zipfile.BadZipFile:
-                pass
+        if not v.ok:
+            a = row()
+            a.filename, a.kind, a.ext, a.size, a.mime, a.origin = name, kind, ext, len(f.data), v.mime, f.origin
+            a.status, a.status_reason, a.storage_key, a.sha256 = "failed", v.reason, "", ""
+            out.append(a)
             continue
-        key, sha = storage.put(rfq.shop_id, data, name)
-        if any(a.sha256 == sha for a in rfq.attachments):
-            continue
-        rfq.attachments.append(Attachment(shop_id=rfq.shop_id, filename=name, kind=kind, ext=ext, size=len(data), sha256=sha, storage_key=key))
+        import hashlib
+        sha = hashlib.sha256(f.data).hexdigest()
+        dup = next((x for x in rfq.attachments if x.sha256 == sha and x.stored), None)
+        if dup is not None:
+            continue  # same bytes already in this RFQ (e.g. attached twice, or also inside the ZIP)
+        key, _ = storage.put(rfq.shop_id, f.data, name)
+        base = _revision_base(name)
+        older = next((x for x in reversed(rfq.attachments) if x.stored and x.kind == kind and x.sha256 != sha and base and _revision_base(x.filename) == base), None)
+        a = row()
+        a.filename, a.kind, a.ext, a.size, a.sha256, a.storage_key, a.mime, a.origin = name, kind, ext, len(f.data), sha, key, v.mime, f.origin
+        a.status, a.status_reason = v.status, v.reason
+        a.export_controlled = itar
+        if older is not None:
+            a.supersedes_id = older.id
+            audit(db, rfq.shop_id, "rfq", rfq.id, "revision", {"file": name, "replaces": older.filename})
+        if f.meta.get("forwarded_from"):
+            a.source_ref = {**(a.source_ref or {}), "forwarded_from": f.meta["forwarded_from"]}
+        out.append(a)
+    for r in rejected:
+        a = row()
+        a.filename, a.kind, a.ext = safe_name(r.name), *classify(safe_name(r.name))
+        a.status, a.status_reason, a.origin, a.storage_key, a.sha256 = "failed", r.reason, r.origin, "", ""
+        out.append(a)
+    if placeholder is not None:  # everything was noise or a duplicate
+        placeholder.status, placeholder.status_reason = "skipped", "Duplicate or not a part file (logo, signature, tiny file)"
+        out.append(placeholder)
+    db.flush()
+    return out
 
 
-def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source: str) -> Rfq | None:
+def _att_names(atts) -> list[str]:
+    return [a[0] if isinstance(a, tuple) else a.name for a in atts]
+
+
+def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source: str, mailbox_id: str | None = None,
+                          files: list | None = None) -> Rfq | None:
+    """Create an RFQ for a new email, or add to the existing RFQ when the email is a reply in the same thread
+    (a revised drawing then becomes a new revision of that RFQ's file). Returns None for an email seen before."""
     if db.scalar(select(Email).where(Email.shop_id == shop_id, Email.message_id == parsed.message_id)):
         return None  # duplicate delivery
     em = Email(shop_id=shop_id, source=source, message_id=parsed.message_id, sender_name=parsed.sender_name, sender_email=parsed.sender_email,
-               subject=parsed.subject, body=parsed.body, received_at=parsed.received_at)
+               subject=parsed.subject, body=parsed.body, received_at=parsed.received_at, thread_id=parsed.thread_id or "",
+               mailbox_id=mailbox_id, remote_id=parsed.remote_id or "")
     db.add(em)
     db.flush()
-    fields = extract_fields(parsed.subject, parsed.body, parsed.sender_name, parsed.sender_email, [a[0] for a in parsed.attachments])
-    rfq = Rfq(shop_id=shop_id, number=next_rfq_number(db, shop_id), email_id=em.id, extracted=fields,
-              customer_name=str(fields.get("customer_name", {}).get("value", "")), customer_contact=parsed.sender_name,
-              customer_email=parsed.sender_email, customer_rfq_no=str(fields.get("customer_rfq_no", {}).get("value", "")),
-              due_date=str(fields.get("quote_due", {}).get("value", "")) or None)
-    db.add(rfq)
+    rfq = None
+    if parsed.thread_id:
+        earlier = db.scalars(select(Email.id).where(Email.shop_id == shop_id, Email.thread_id == parsed.thread_id, Email.id != em.id)).all()
+        if earlier:
+            rfq = db.scalar(select(Rfq).where(Rfq.shop_id == shop_id, Rfq.email_id.in_(earlier)).order_by(Rfq.created_at))
+    names = _att_names(parsed.attachments) + [f.filename for f in (files or [])]
+    fields = extract_fields(parsed.subject, parsed.body, parsed.sender_name, parsed.sender_email, names)
+    if rfq is not None:
+        if fields.get("itar", {}).get("value"):
+            rfq.extracted = {**rfq.extracted, "itar": fields["itar"]}
+        audit(db, shop_id, "rfq", rfq.id, "email_in_thread", {"source": source, "subject": parsed.subject, "attachments": len(names)})
+    else:
+        rfq = Rfq(shop_id=shop_id, number=next_rfq_number(db, shop_id), email_id=em.id, extracted=fields,
+                  customer_name=str(fields.get("customer_name", {}).get("value", "")), customer_contact=parsed.sender_name,
+                  customer_email=parsed.sender_email, customer_rfq_no=str(fields.get("customer_rfq_no", {}).get("value", "")),
+                  due_date=str(fields.get("quote_due", {}).get("value", "")) or None)
+        db.add(rfq)
+        db.flush()
+        audit(db, shop_id, "rfq", rfq.id, "created", {"source": source, "subject": parsed.subject, "attachments": len(names)})
+    add_files(db, rfq, parsed.attachments, source=source, email_id=em.id, mailbox_id=mailbox_id, sender_email=parsed.sender_email)
+    for ph in files or []:  # placeholders for attachments still to be fetched from the mailbox
+        ph.shop_id, ph.email_id, ph.mailbox_id, ph.sender_email, ph.source = shop_id, em.id, mailbox_id, parsed.sender_email, source
+        ph.export_controlled = bool(rfq.extracted.get("itar", {}).get("value"))
+        rfq.attachments.append(ph)
+    from .intake.links import add_link_rows
+    add_link_rows(db, rfq, parsed, em.id, mailbox_id)
     db.flush()
-    add_files(db, rfq, parsed.attachments)
-    audit(db, shop_id, "rfq", rfq.id, "created", {"source": source, "subject": parsed.subject, "attachments": len(parsed.attachments)})
     return rfq
 
 
@@ -185,11 +272,17 @@ def process_rfq(db: Session, rfq_id: str):
     if not rfq:
         return
     rfq.analysis_status = "running"
+    for a in rfq.attachments:
+        if a.stored and a.status in ("stored", "ready") and a.kind in ("drawing", "model"):
+            a.status = "analyzing"
     db.commit()
     try:
         _process(db, rfq)
         rfq.analysis_status = "done"
         rfq.analysis_error = None
+        for a in rfq.attachments:
+            if a.status == "analyzing" or (a.stored and a.status == "stored"):
+                a.status = "ready"
         if rfq.status == "new":
             rfq.status = "estimating"
     except Exception as e:  # keep the RFQ usable; show the error
@@ -198,6 +291,9 @@ def process_rfq(db: Session, rfq_id: str):
         rfq = db.get(Rfq, rfq_id)
         rfq.analysis_status = "error"
         rfq.analysis_error = str(e)[:2000]
+        for a in rfq.attachments:
+            if a.status == "analyzing":
+                a.status, a.status_reason = "failed", "Analysis failed: " + str(e)[:300]
     db.commit()
 
 
@@ -230,13 +326,19 @@ def _process(db: Session, rfq: Rfq):
     # drawings
     drawings = {}
     for att in rfq.attachments:
-        if att.kind == "drawing":
+        if att.kind == "drawing" and att.stored:
             drawings[att.id] = analyze_drawing(att, use_ai, ai)
+            if EXPORT_RE.search(drawings[att.id].get("text", "") or ""):
+                att.export_controlled = True
+                if not rfq.extracted.get("itar", {}).get("value"):
+                    rfq.extracted = {**rfq.extracted, "itar": {"value": True, "confidence": 0.8, "source": "drawing", "evidence": f"export-control marking on {att.filename}"}}
+                    for x in rfq.attachments:
+                        x.export_controlled = True
     # models -> machined parts
     model_parts = []  # (att, part_analysis, assembly_info)
     assemblies = []
     for att in rfq.attachments:
-        if att.kind != "model":
+        if att.kind != "model" or not att.stored:
             continue
         if att.ext in ("step", "stp"):
             res = analyze_step(storage.local_path(att.storage_key))

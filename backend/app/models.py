@@ -46,6 +46,8 @@ class User(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(200), default="")
     role: Mapped[str] = mapped_column(String(20), default="estimator")  # admin | estimator | viewer
     external_id: Mapped[Optional[str]] = mapped_column(String(200), index=True)  # Entra object id / GitHub id
+    # may open files marked ITAR / CUI / export-controlled (granted by a shop admin; every view is audited)
+    export_ok: Mapped[bool] = mapped_column(Boolean, default=False)
     __table_args__ = (UniqueConstraint("shop_id", "email"),)
 
 
@@ -114,6 +116,9 @@ class Email(Base, TimestampMixin):
     subject: Mapped[str] = mapped_column(Text, default="")
     body: Mapped[str] = mapped_column(Text, default="")
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    thread_id: Mapped[str] = mapped_column(String(500), default="", index=True)   # Gmail threadId / Graph conversationId
+    mailbox_id: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    remote_id: Mapped[str] = mapped_column(String(500), default="")                # provider message id (for re-fetching)
     __table_args__ = (UniqueConstraint("shop_id", "message_id"),)
 
 
@@ -146,9 +151,27 @@ class Attachment(Base, TimestampMixin):
     kind: Mapped[str] = mapped_column(String(20))  # model | drawing | email | other
     ext: Mapped[str] = mapped_column(String(12))
     size: Mapped[int] = mapped_column(Integer, default=0)
-    sha256: Mapped[str] = mapped_column(String(64))
-    storage_key: Mapped[str] = mapped_column(String(500))
+    sha256: Mapped[str] = mapped_column(String(64), default="")
+    storage_key: Mapped[str] = mapped_column(String(500), default="")   # "" until the bytes are stored
+    mime: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    # fetching | stored | analyzing | ready | download_only | needs_manual | failed | skipped
+    status: Mapped[str] = mapped_column(String(20), default="stored")
+    status_reason: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(20), default="upload")   # upload | graph | gmail | imap | link | portal
+    origin: Mapped[str] = mapped_column(String(300), default="")         # zip:x.zip, eml:fwd.eml, link:dropbox ...
+    email_id: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    mailbox_id: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    sender_email: Mapped[str] = mapped_column(String(320), default="")
+    source_ref: Mapped[dict] = mapped_column(JSONType, default=dict)     # how to fetch it again (message/attachment ids, url)
+    export_controlled: Mapped[bool] = mapped_column(Boolean, default=False)
+    supersedes_id: Mapped[Optional[str]] = mapped_column(String(32))     # earlier revision of the same file in this RFQ
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     rfq: Mapped[Rfq] = relationship(back_populates="attachments")
+
+    @property
+    def stored(self) -> bool:
+        return bool(self.storage_key)
 
 
 # ---------------------------------------------------------------- parts & analysis
@@ -248,6 +271,28 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(40))
     detail: Mapped[Any] = mapped_column(JSONType, default=dict)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Mailbox(Base, TimestampMixin):
+    """A linked mailbox (read-only). Tokens are encrypted at rest (app/crypto.py) and never logged or returned by the API."""
+    __tablename__ = "mailboxes"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(10))                  # gmail | graph
+    auth: Mapped[str] = mapped_column(String(10), default="oauth")     # oauth (delegated, per user) | app (Graph application permission)
+    address: Mapped[str] = mapped_column(String(320), default="")
+    token_enc: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="connected")   # connected | error | reconnect | disabled
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    backfill_days: Mapped[int] = mapped_column(Integer, default=0)
+    keywords: Mapped[str] = mapped_column(Text, default="")            # optional extra filter; empty = every message with files or links
+    state: Mapped[dict] = mapped_column(JSONType, default=dict)        # gmail history id / graph delta link
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    next_try_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[Optional[str]] = mapped_column(String(32))
+    __table_args__ = (UniqueConstraint("shop_id", "provider", "address"),)
 
 
 class IntegrationState(Base, TimestampMixin):
