@@ -24,6 +24,7 @@ def client():
     from fastapi.testclient import TestClient
     from app.config import get_settings
     from app.db import Base, engine, reset_engine
+    import app.models  # noqa: F401  (register every table so drop_all clears them)
     get_settings.cache_clear()
     reset_engine()
     Base.metadata.drop_all(engine())

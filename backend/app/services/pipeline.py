@@ -350,9 +350,14 @@ def _process(db: Session, rfq: Rfq):
             model_parts.append((att, {"name": att.filename.rsplit(".", 1)[0], "error": f".{att.ext} files can't be analysed. Ask the customer for STEP (AP214/AP242).", "size": [0, 0, 0], "features": [], "flags": []}, False))
 
     # remove previous parts/quotes for a clean re-run (quotes with saved versions are kept by part number below)
-    for p in list(rfq.parts):
+    for p in rfq.parts:  # unlink assembly children first, or deleting a parent violates parts.parent_part_id
+        p.parent_part_id = None
+    db.flush()
+    for p in list(rfq.parts):  # quotes first: the ORM has no Part->Quote relationship to order the deletes
         for q in db.scalars(select(Quote).where(Quote.part_id == p.id)).all():
             db.delete(q)
+    db.flush()
+    for p in list(rfq.parts):
         db.delete(p)
     db.flush()
 
