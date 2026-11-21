@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, FileDown, Trophy, XCircle } from "lucide-react";
+import { ArrowLeft, FileDown, Hash, Trophy, XCircle } from "lucide-react";
 import { api, money } from "../api";
-import { Badge, toast, useAsync } from "../components/ui";
+import { Badge, FlagButton, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
 
 type Line = { part_id: string; part_number: string; revision: string; version_id: string; qty: number; include: boolean; lead_time: string };
@@ -16,6 +16,21 @@ export default function QuoteBuilder() {
   const [notes, setNotes] = useState("Prices in " + cur + ", per part, ex-works. Lead times are from receipt of order (ARO) and confirmed at order.");
   const [days, setDays] = useState(30);
   const [out, setOut] = useState<any>(null);
+  // kept locally so assigning a number or flagging doesn't reload r.data and reset the lines being edited
+  const [number, setNumber] = useState<string>("");
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!r.data) return;
+    setNumber(r.data.number || "");
+    setFlags(Object.fromEntries(r.data.parts.map((p: any) => [p.id, !!p.flagged])));
+  }, [r.data]);
+  const assignNumber = async () => {
+    try { const o = await api.post(`/rfqs/${id}/assign-number`); setNumber(o.number); toast(`Assigned ${o.number}`); } catch (e: any) { toast(e.message); }
+  };
+  const flagPart = async (pid: string, flagged: boolean) => {
+    setFlags({ ...flags, [pid]: flagged });
+    try { await api.patch(`/parts/${pid}`, { flagged }); } catch (e: any) { setFlags({ ...flags, [pid]: !flagged }); toast(e.message); }
+  };
   useEffect(() => {
     if (!r.data) return;
     const ls: Line[] = [];
@@ -38,14 +53,17 @@ export default function QuoteBuilder() {
   };
   return (
     <div className="mx-auto max-w-5xl px-6 py-6">
-      <Link to={`/rfq/${id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {r.data.number || "RFQ"}</Link>
-      <h1 className="mb-1 text-xl font-semibold">Customer quote</h1>
+      <Link to={`/rfq/${id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {number || "RFQ"}</Link>
+      <div className="mb-1 flex flex-wrap items-center gap-3"><h1 className="text-xl font-semibold">Customer quote</h1>
+        <span className="ml-auto flex items-center gap-2 text-sm">{number ? <><span className="text-steel-500">RFQ #</span><Badge tone="blue">{number}</Badge></>
+          : <><span className="text-steel-500">No RFQ # yet</span><button className="btn btn-sm" onClick={assignNumber} title="Issue the RFQ number for this quote (finalizing also assigns one)"><Hash size={13} /> Assign RFQ #</button></>}</span></div>
       <p className="mb-5 text-sm text-steel-500">The customer sees only part number, revision, quantity, price per part and lead time. Choose which variant and quantities to include.</p>
       <div className="card mb-5 overflow-x-auto">
-        <table className="w-full"><thead><tr><th className="th w-10"></th><th className="th">Part number</th><th className="th">Rev</th><th className="th">Variant</th><th className="th text-right">Qty</th><th className="th text-right">Price per part</th><th className="th text-right">Extended</th><th className="th">Lead time</th></tr></thead>
+        <table className="w-full"><thead><tr><th className="th w-10"></th><th className="th w-10"><span className="sr-only">Flag</span></th><th className="th">Part number</th><th className="th">Rev</th><th className="th">Variant</th><th className="th text-right">Qty</th><th className="th text-right">Price per part</th><th className="th text-right">Extended</th><th className="th">Lead time</th></tr></thead>
           <tbody>{lines.map((l, i) => { const p = parts.find((x: any) => x.id === l.part_id); const price = priceOf(l);
-            return <tr key={i} className={l.include ? "" : "opacity-50"}>
+            return <tr key={i} className={`${l.include ? "" : "opacity-50"} ${flags[l.part_id] ? "bg-amber-50" : ""}`}>
               <td className="td"><input type="checkbox" checked={l.include} onChange={(e) => setLines(lines.map((x, j) => (j === i ? { ...x, include: e.target.checked } : x)))} aria-label="Include line" /></td>
+              <td className="td"><FlagButton on={!!flags[l.part_id]} onToggle={(v) => flagPart(l.part_id, v)} label="line item" /></td>
               <td className="td font-medium">{l.part_number}</td><td className="td">{l.revision || "—"}</td>
               <td className="td"><select className="input !w-auto !py-0.5 text-xs" value={l.version_id} onChange={(e) => {
                 const v = p.versions.find((x: any) => x.id === e.target.value);

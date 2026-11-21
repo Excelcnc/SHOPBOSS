@@ -133,6 +133,7 @@ class Rfq(Base, TimestampMixin):
     analysis_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | running | done | error
     analysis_error: Mapped[Optional[str]] = mapped_column(Text)
     assigned_to: Mapped[Optional[str]] = mapped_column(ForeignKey("users.id"))
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # estimator highlight in the queue
     attachments: Mapped[list["Attachment"]] = relationship(back_populates="rfq", cascade="all, delete-orphan")
     parts: Mapped[list["Part"]] = relationship(back_populates="rfq", cascade="all, delete-orphan")
 
@@ -173,6 +174,7 @@ class Part(Base, TimestampMixin):
     processes: Mapped[list] = mapped_column(JSONType, default=list)     # detected outside processes
     warnings: Mapped[list] = mapped_column(JSONType, default=list)
     vector: Mapped[list] = mapped_column(JSONType, default=list)        # similarity features
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # estimator highlight on the line item
     purchased: Mapped[dict] = mapped_column(JSONType, default=dict)     # for purchased components: vendor, cost
     rfq: Mapped[Rfq] = relationship(back_populates="parts")
 

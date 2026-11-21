@@ -152,17 +152,19 @@ def rfq_summary(db: Session, r: Rfq) -> dict:
                 priced.append(p.id)
     return {"id": r.id, "number": r.number, "status": r.status, "customer_name": r.customer_name, "customer_contact": r.customer_contact,
             "customer_email": r.customer_email, "customer_rfq_no": r.customer_rfq_no, "due_date": r.due_date, "created_at": r.created_at.isoformat(),
-            "analysis_status": r.analysis_status, "analysis_error": r.analysis_error, "assigned_to": r.assigned_to,
+            "analysis_status": r.analysis_status, "analysis_error": r.analysis_error, "assigned_to": r.assigned_to, "flagged": bool(r.flagged),
             "subject": (r.extracted.get("_subject") or {}).get("value") if isinstance(r.extracted.get("_subject"), dict) else None,
             "parts": sum(1 for p in parts if p.kind == "machined"), "priced": len(priced),
             "warnings": sum(len(p.warnings or []) for p in parts), "attachments": len(r.attachments)}
 
 
 @api.get("/rfqs")
-def list_rfqs(status: Optional[str] = None, q: Optional[str] = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def list_rfqs(status: Optional[str] = None, q: Optional[str] = None, flagged: Optional[bool] = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
     stmt = select(Rfq).where(Rfq.shop_id == user.shop_id).order_by(Rfq.created_at.desc()).limit(500)
     if status:
         stmt = stmt.where(Rfq.status.in_(status.split(",")))
+    if flagged is not None:
+        stmt = stmt.where(Rfq.flagged == flagged)
     rows = db.scalars(stmt).all()
     out = []
     from .models import Email
@@ -232,7 +234,7 @@ def part_dict(p: Part) -> dict:
             "qty_per_parent": p.qty_per_parent, "model_attachment_id": p.model_attachment_id, "drawing_attachment_id": p.drawing_attachment_id, "match": p.match,
             "cad": {k: v for k, v in (p.cad or {}).items() if k not in ("mesh_key",)}, "has_mesh": bool((p.cad or {}).get("mesh_key")),
             "drawing": p.drawing, "material_code": p.material_code, "material_source": p.material_source, "processes": p.processes,
-            "warnings": p.warnings, "purchased": p.purchased}
+            "warnings": p.warnings, "purchased": p.purchased, "flagged": bool(p.flagged)}
 
 
 class RfqPatch(BaseModel):
@@ -243,6 +245,7 @@ class RfqPatch(BaseModel):
     customer_rfq_no: Optional[str] = None
     due_date: Optional[str] = None
     assigned_to: Optional[str] = None
+    flagged: Optional[bool] = None
     fields: Optional[dict] = None  # extracted field edits {key: value}
 
 
@@ -335,6 +338,7 @@ class PartPatch(BaseModel):
     drawing_attachment_id: Optional[str] = None
     purchased: Optional[dict] = None
     processes: Optional[list] = None
+    flagged: Optional[bool] = None
 
 
 @api.patch("/parts/{pid}")
@@ -346,8 +350,8 @@ def patch_part(pid: str, body: PartPatch, user: User = Depends(current_user), db
     if "material_code" in data:
         p.material_source = {"code": data["material_code"], "origin": "estimator", "confidence": 1.0}
     q = db.scalar(select(Quote).where(Quote.part_id == p.id))
-    # propagate identity/material/process edits into draft versions
-    if q:
+    # propagate identity/material/process edits into draft versions (a flag toggle alone changes no pricing)
+    if q and set(data) - {"flagged"}:
         for v in q.versions:
             if v.status == "draft":
                 v.inputs = {**v.inputs, "part": {"part_number": p.part_number, "revision": p.revision}}

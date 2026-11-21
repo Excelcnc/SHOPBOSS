@@ -18,6 +18,7 @@ app.include_router(api)
 def startup():
     # Development convenience; production uses Alembic migrations (alembic upgrade head).
     Base.metadata.create_all(engine())
+    _add_missing_columns()
     from .db import SessionLocal
     from .services.shopdata import ensure_reference_materials
     db = SessionLocal()
@@ -26,6 +27,22 @@ def startup():
         db.commit()
     finally:
         db.close()
+
+
+def _add_missing_columns():
+    """create_all() does not add columns to existing tables; add the simple ones introduced since (until Alembic is set up)."""
+    from sqlalchemy import inspect, text
+    eng = engine()
+    insp = inspect(eng)
+    with eng.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have and col.server_default is not None:
+                    ddl = col.type.compile(dialect=eng.dialect)
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl} NOT NULL DEFAULT {col.server_default.arg}'))
 
 
 @app.get("/api/health")

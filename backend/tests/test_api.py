@@ -132,3 +132,38 @@ def test_rfq_number_assigned_only_when_quoted(client, samples):
     part = next(p for p in rfq["parts"] if p["kind"] == "machined")
     client.post(f"/api/rfqs/{a['id']}/finalize", json={"lines": [{"version_id": part["versions"][0]["id"], "qty": 250}]})
     assert client.get(f"/api/rfqs/{a['id']}").json()["number"].endswith("-0002")
+
+
+def test_flag_rfq_and_line_items(client, samples):
+    rid = upload(client, samples, ["BRK-20417_RevC.pdf", "BRK-20417_RevC.step"], subject="flag me", quantities="250")[0]["id"]
+    other = upload(client, samples, ["FLG-5520_RevA.dxf"], subject="leave me")[0]["id"]
+    rfq = client.get(f"/api/rfqs/{rid}").json()
+    assert rfq["flagged"] is False and all(p["flagged"] is False for p in rfq["parts"])
+    part = next(p for p in rfq["parts"] if p["kind"] == "machined")
+    price = part["versions"][0]["breaks"][0]["unit_price"]
+    # flag a line item: no repricing, flag persists
+    assert client.patch(f"/api/parts/{part['id']}", json={"flagged": True}).json()["flagged"] is True
+    rfq = client.get(f"/api/rfqs/{rid}").json()
+    p2 = next(p for p in rfq["parts"] if p["id"] == part["id"])
+    assert p2["flagged"] is True and p2["versions"][0]["breaks"][0]["unit_price"] == price
+    # flag the RFQ (email) and filter the queue by it
+    client.patch(f"/api/rfqs/{rid}", json={"flagged": True})
+    flagged = client.get("/api/rfqs?flagged=true").json()
+    assert [r["id"] for r in flagged] == [rid]
+    assert other in [r["id"] for r in client.get("/api/rfqs?flagged=false").json()]
+    client.patch(f"/api/rfqs/{rid}", json={"flagged": False})
+    assert client.get("/api/rfqs?flagged=true").json() == []
+
+
+def test_startup_adds_flag_columns_to_existing_tables(client):
+    from sqlalchemy import inspect, text
+    from app.db import engine
+    from app.main import _add_missing_columns
+    with engine().begin() as c:
+        c.execute(text("ALTER TABLE rfqs DROP COLUMN flagged"))
+        c.execute(text("ALTER TABLE parts DROP COLUMN flagged"))
+    _add_missing_columns()
+    insp = inspect(engine())
+    assert "flagged" in {c["name"] for c in insp.get_columns("rfqs")}
+    assert "flagged" in {c["name"] for c in insp.get_columns("parts")}
+    _add_missing_columns()  # idempotent

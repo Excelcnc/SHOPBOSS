@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Flag, X } from "lucide-react";
 
 export function Badge({ tone = "gray", children, title }: { tone?: "gray" | "blue" | "green" | "amber" | "red" | "navy"; children: ReactNode; title?: string }) {
   const t = {
@@ -74,4 +74,16 @@ export function toast(msg: string) {
 
 export function Empty({ icon, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
   return <div className="flex flex-col items-center gap-2 px-6 py-14 text-center text-steel-500">{icon}<p className="font-medium text-steel-700">{title}</p>{children}</div>;
+}
+
+
+/** Toggle that marks an RFQ or line item as needing attention. Stops clicks from reaching a surrounding link/row. */
+export function FlagButton({ on, onToggle, label = "line" }: { on: boolean; onToggle: (next: boolean) => void; label?: string }) {
+  return (
+    <button type="button" aria-pressed={on} title={on ? `Unflag this ${label}` : `Flag this ${label} as needed`} aria-label={on ? `Unflag ${label}` : `Flag ${label}`}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(!on); }}
+      className={`grid h-7 w-7 flex-none place-items-center rounded-md border transition-colors ${on ? "border-amber-300 bg-amber-100 text-amber-700" : "border-transparent text-steel-300 hover:border-steel-200 hover:text-amber-600"}`}>
+      <Flag size={14} fill={on ? "currentColor" : "none"} />
+    </button>
+  );
 }

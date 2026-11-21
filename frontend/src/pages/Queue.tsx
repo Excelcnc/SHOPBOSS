@@ -2,17 +2,21 @@ import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AlertTriangle, Inbox, Paperclip, Plus, RefreshCw, Upload } from "lucide-react";
 import { api, fmtDate } from "../api";
-import { Badge, Empty, Modal, STATUS, toast, useAsync } from "../components/ui";
+import { Badge, Empty, FlagButton, Modal, STATUS, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
 
-const TABS = [["new,estimating", "Open"], ["new", "New"], ["estimating", "Estimating"], ["quoted", "Quoted"], ["won", "Won"], ["lost", "Lost"], ["", "All"]];
+const TABS = [["new,estimating", "Open"], ["new", "New"], ["estimating", "Estimating"], ["quoted", "Quoted"], ["won", "Won"], ["lost", "Lost"], ["flagged", "Flagged"], ["", "All"]];
 
 export default function Queue() {
   const [tab, setTab] = useState("new,estimating");
   const [q, setQ] = useState("");
   const [show, setShow] = useState(false);
   const me = useMe();
-  const list = useAsync(() => api.get(`/rfqs?${new URLSearchParams({ ...(tab ? { status: tab } : {}), ...(q ? { q } : {}) })}`), [tab, q]);
+  const list = useAsync(() => api.get(`/rfqs?${new URLSearchParams({ ...(tab === "flagged" ? { flagged: "true" } : tab ? { status: tab } : {}), ...(q ? { q } : {}) })}`), [tab, q]);
+  const toggleFlag = async (r: any, flagged: boolean) => {
+    list.setData((list.data || []).map((x: any) => (x.id === r.id ? { ...x, flagged } : x)));
+    try { await api.patch(`/rfqs/${r.id}`, { flagged }); } catch (e: any) { toast(e.message); list.reload(); }
+  };
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -27,10 +31,11 @@ export default function Queue() {
       <div className="mb-3 flex gap-1">{TABS.map(([v, l]) => <button key={l} onClick={() => setTab(v)} className={`rounded-md px-3 py-1.5 text-sm ${tab === v ? "bg-navy-700 text-white" : "text-steel-600 hover:bg-steel-100"}`}>{l}</button>)}</div>
       <div className="card overflow-x-auto">
         <table className="w-full">
-          <thead><tr><th className="th">RFQ</th><th className="th">Customer</th><th className="th">Subject</th><th className="th">Received</th><th className="th">Quote due</th><th className="th">Parts priced</th><th className="th">Status</th></tr></thead>
+          <thead><tr><th className="th w-10"><span className="sr-only">Flag</span></th><th className="th">RFQ</th><th className="th">Customer</th><th className="th">Subject</th><th className="th">Received</th><th className="th">Quote due</th><th className="th">Parts priced</th><th className="th">Status</th></tr></thead>
           <tbody>
             {(list.data || []).map((r: any) => (
-              <tr key={r.id} className="cursor-pointer hover:bg-navy-50/50">
+              <tr key={r.id} className={`cursor-pointer ${r.flagged ? "bg-amber-50 hover:bg-amber-100/70" : "hover:bg-navy-50/50"}`}>
+                <td className="td"><FlagButton on={r.flagged} onToggle={(v) => toggleFlag(r, v)} label="RFQ" /></td>
                 <td className="td"><Link to={`/rfq/${r.id}`} className="font-mono text-navy-700 hover:underline">{r.number || <span className="font-sans text-xs italic text-steel-500">Unassigned</span>}</Link></td>
                 <td className="td"><div className="font-medium">{r.customer_name || "—"}</div><div className="text-xs text-steel-500">{r.customer_contact}</div></td>
                 <td className="td max-w-[340px]"><Link to={`/rfq/${r.id}`} className="line-clamp-2">{r.subject}</Link>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Box, ChevronRight, FileText, Hash, Mail, Package, RefreshCw, Send, ShoppingCart } from "lucide-react";
 import { api, money } from "../api";
-import { Badge, Conf, STATUS, Src, toast, useAsync } from "../components/ui";
+import { Badge, Conf, FlagButton, STATUS, Src, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
 
 const FIELDS: [string, string][] = [["customer_name", "Customer"], ["customer_contact", "Contact"], ["customer_rfq_no", "Customer RFQ #"], ["part_numbers", "Part number(s)"],
@@ -22,6 +22,12 @@ export default function Rfq() {
   const machined = d.parts.filter((p: any) => p.kind !== "assembly");
   const asm = d.parts.filter((p: any) => p.kind === "assembly");
   const editField = async (k: string, v: string) => { await api.patch(`/rfqs/${id}`, { fields: { [k]: v } }); r.reload(); };
+  const flagRfq = async (flagged: boolean) => { r.setData({ ...d, flagged }); try { await api.patch(`/rfqs/${id}`, { flagged }); } catch (e: any) { toast(e.message); r.reload(); } };
+  const flagPart = async (pid: string, flagged: boolean) => {
+    r.setData({ ...d, parts: d.parts.map((p: any) => (p.id === pid ? { ...p, flagged } : p)) });
+    try { await api.patch(`/parts/${pid}`, { flagged }); } catch (e: any) { toast(e.message); r.reload(); }
+  };
+  const nFlagged = machined.filter((p: any) => p.flagged).length;
   const assignNumber = async () => {
     try { const o = await api.post(`/rfqs/${id}/assign-number`); toast(`Assigned ${o.number}`); r.reload(); } catch (e: any) { toast(e.message); }
   };
@@ -31,6 +37,7 @@ export default function Rfq() {
       <div className="mb-5 flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1"><div className="font-mono text-sm text-steel-500">{d.number || <span className="font-sans italic">No RFQ # yet</span>}{d.customer_rfq_no && ` · customer ref ${d.customer_rfq_no}`}</div>
           <h1 className="text-xl font-semibold">{d.customer_name || "Unknown customer"} <span className="font-normal text-steel-500">— {d.email?.subject}</span></h1></div>
+        <FlagButton on={d.flagged} onToggle={flagRfq} label="RFQ" />
         <select className="input !w-auto" value={d.status} onChange={async (e) => { await api.patch(`/rfqs/${id}`, { status: e.target.value }); r.reload(); }} aria-label="Status">
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
         <button className="btn" onClick={async () => { await api.post(`/rfqs/${id}/analyze`); toast("Re-analysing"); r.reload(); }}><RefreshCw size={14} /> Re-analyse</button>
@@ -42,6 +49,7 @@ export default function Rfq() {
         <div className="space-y-5">
           <section className="card">
             <div className="flex items-center border-b border-steel-200 px-4 py-3"><h2 className="font-semibold">Parts to quote</h2><span className="ml-2 text-sm text-steel-500">{machined.filter((p: any) => p.kind === "machined").length} machined{machined.some((p: any) => p.kind === "purchased") && `, ${machined.filter((p: any) => p.kind === "purchased").length} purchased`}</span>
+              {nFlagged > 0 && <span className="ml-2"><Badge tone="amber">{nFlagged} flagged</Badge></span>}
               <span className="ml-auto">{d.number ? <Badge tone="blue">{d.number}</Badge>
                 : <button className="btn btn-sm" onClick={assignNumber} title="Issue the RFQ number now that this quote is being processed"><Hash size={13} /> Assign RFQ #</button>}</span></div>
             {asm.map((a: any) => <div key={a.id} className="flex items-center gap-2 border-b border-steel-100 bg-steel-50 px-4 py-2 text-sm"><Package size={15} className="text-navy-700" /> Assembly <b>{a.part_number}</b>
@@ -50,8 +58,9 @@ export default function Rfq() {
               {machined.map((p: any) => {
                 const v = p.versions?.[0]; const b = v?.breaks || [];
                 return (
-                  <li key={p.id} className="border-b border-steel-100 last:border-0">
-                    <Link to={p.kind === "machined" ? `/rfq/${id}/part/${p.id}` : "#"} className={`flex items-center gap-4 px-4 py-3 ${p.kind === "machined" ? "hover:bg-navy-50/40" : "cursor-default"}`}>
+                  <li key={p.id} className={`border-b border-steel-100 last:border-0 ${p.flagged ? "border-l-4 border-l-amber-400 bg-amber-50" : ""}`}>
+                    <Link to={p.kind === "machined" ? `/rfq/${id}/part/${p.id}` : "#"} className={`flex items-center gap-4 px-4 py-3 ${p.kind === "machined" ? (p.flagged ? "hover:bg-amber-100/60" : "hover:bg-navy-50/40") : "cursor-default"}`}>
+                      <FlagButton on={!!p.flagged} onToggle={(v) => flagPart(p.id, v)} label="line item" />
                       <span className="grid h-10 w-10 flex-none place-items-center rounded-md bg-steel-100 text-steel-500">{p.kind === "purchased" ? <ShoppingCart size={18} /> : p.has_mesh ? <Box size={18} /> : <FileText size={18} />}</span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{p.part_number || "Unnamed"}</span>{p.revision && <Badge>Rev {p.revision}</Badge>}
