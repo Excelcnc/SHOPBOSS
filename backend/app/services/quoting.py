@@ -86,6 +86,8 @@ def finalize(db: Session, rfq: Rfq, lines: list[dict], valid_days: int, notes: s
                           "unit_price": br["unit_price"], "extended": round(br["unit_price"] * qty, 2), "version_id": v.id,
                           "description": ln.get("description", "")})
         v.status = "final"
+    from .pipeline import assign_rfq_number
+    assign_rfq_number(db, rfq, user_id)  # an RFQ is numbered no later than when its quote is issued
     out = QuoteOutput(shop_id=rfq.shop_id, rfq_id=rfq.id, quote_number=next_quote_number(db, rfq.shop_id), lines=out_lines,
                       valid_until=(date.today() + timedelta(days=valid_days)).isoformat(), notes=notes)
     db.add(out)

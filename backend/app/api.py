@@ -21,7 +21,7 @@ from .services import history as hist
 from .services import quoting
 from .services.drawing.extract import image_to_pdf, render_page_png
 from .services.email.parse import ParsedEmail, extract_fields, parse_email_file
-from .services.pipeline import add_files, audit, create_rfq_from_email
+from .services.pipeline import add_files, assign_rfq_number, audit, create_rfq_from_email
 from .services.shopdata import shop_catalog
 
 api = APIRouter(prefix="/api")
@@ -425,6 +425,15 @@ class FinalizeBody(BaseModel):
     lines: list[dict]
     valid_days: int = 30
     notes: str = ""
+
+
+@api.post("/rfqs/{rid}/assign-number")
+def assign_number(rid: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Issue the RFQ number when the quote is processed (intake leaves RFQs unnumbered)."""
+    r = own(db.get(Rfq, rid), user)
+    assign_rfq_number(db, r, user.id)
+    db.commit()
+    return {"id": r.id, "number": r.number}
 
 
 @api.post("/rfqs/{rid}/finalize")

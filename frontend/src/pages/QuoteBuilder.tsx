@@ -38,7 +38,7 @@ export default function QuoteBuilder() {
   };
   return (
     <div className="mx-auto max-w-5xl px-6 py-6">
-      <Link to={`/rfq/${id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {r.data.number}</Link>
+      <Link to={`/rfq/${id}`} className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {r.data.number || "RFQ"}</Link>
       <h1 className="mb-1 text-xl font-semibold">Customer quote</h1>
       <p className="mb-5 text-sm text-steel-500">The customer sees only part number, revision, quantity, price per part and lead time. Choose which variant and quantities to include.</p>
       <div className="card mb-5 overflow-x-auto">

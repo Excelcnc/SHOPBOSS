@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, Box, ChevronRight, FileText, Mail, Package, RefreshCw, Send, ShoppingCart } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Box, ChevronRight, FileText, Hash, Mail, Package, RefreshCw, Send, ShoppingCart } from "lucide-react";
 import { api, money } from "../api";
 import { Badge, Conf, STATUS, Src, toast, useAsync } from "../components/ui";
 import { useMe } from "../App";
@@ -22,11 +22,14 @@ export default function Rfq() {
   const machined = d.parts.filter((p: any) => p.kind !== "assembly");
   const asm = d.parts.filter((p: any) => p.kind === "assembly");
   const editField = async (k: string, v: string) => { await api.patch(`/rfqs/${id}`, { fields: { [k]: v } }); r.reload(); };
+  const assignNumber = async () => {
+    try { const o = await api.post(`/rfqs/${id}/assign-number`); toast(`Assigned ${o.number}`); r.reload(); } catch (e: any) { toast(e.message); }
+  };
   return (
     <div className="mx-auto max-w-7xl px-6 py-6">
       <Link to="/" className="mb-3 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> Queue</Link>
       <div className="mb-5 flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1"><div className="font-mono text-sm text-steel-500">{d.number}{d.customer_rfq_no && ` · customer ref ${d.customer_rfq_no}`}</div>
+        <div className="min-w-0 flex-1"><div className="font-mono text-sm text-steel-500">{d.number || <span className="font-sans italic">No RFQ # yet</span>}{d.customer_rfq_no && ` · customer ref ${d.customer_rfq_no}`}</div>
           <h1 className="text-xl font-semibold">{d.customer_name || "Unknown customer"} <span className="font-normal text-steel-500">— {d.email?.subject}</span></h1></div>
         <select className="input !w-auto" value={d.status} onChange={async (e) => { await api.patch(`/rfqs/${id}`, { status: e.target.value }); r.reload(); }} aria-label="Status">
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
@@ -38,7 +41,9 @@ export default function Rfq() {
       <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
         <div className="space-y-5">
           <section className="card">
-            <div className="flex items-center border-b border-steel-200 px-4 py-3"><h2 className="font-semibold">Parts to quote</h2><span className="ml-2 text-sm text-steel-500">{machined.filter((p: any) => p.kind === "machined").length} machined{machined.some((p: any) => p.kind === "purchased") && `, ${machined.filter((p: any) => p.kind === "purchased").length} purchased`}</span></div>
+            <div className="flex items-center border-b border-steel-200 px-4 py-3"><h2 className="font-semibold">Parts to quote</h2><span className="ml-2 text-sm text-steel-500">{machined.filter((p: any) => p.kind === "machined").length} machined{machined.some((p: any) => p.kind === "purchased") && `, ${machined.filter((p: any) => p.kind === "purchased").length} purchased`}</span>
+              <span className="ml-auto">{d.number ? <Badge tone="blue">{d.number}</Badge>
+                : <button className="btn btn-sm" onClick={assignNumber} title="Issue the RFQ number now that this quote is being processed"><Hash size={13} /> Assign RFQ #</button>}</span></div>
             {asm.map((a: any) => <div key={a.id} className="flex items-center gap-2 border-b border-steel-100 bg-steel-50 px-4 py-2 text-sm"><Package size={15} className="text-navy-700" /> Assembly <b>{a.part_number}</b>
               {a.revision && <Badge>Rev {a.revision}</Badge>}<span className="text-steel-500">— {a.drawing_attachment_id ? "make/buy and quantities from the drawing parts list" : "quantities from the 3D model"}; prices below are for assemblies requested × qty per assembly</span></div>)}
             <ul>

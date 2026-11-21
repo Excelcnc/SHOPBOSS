@@ -121,7 +121,7 @@ class Rfq(Base, TimestampMixin):
     __tablename__ = "rfqs"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id"), index=True)
-    number: Mapped[str] = mapped_column(String(40), index=True)
+    number: Mapped[str] = mapped_column(String(40), index=True, default="")  # "" until the quote is processed (assign_rfq_number)
     status: Mapped[str] = mapped_column(String(20), default="new")  # new | estimating | quoted | won | lost
     customer_name: Mapped[str] = mapped_column(String(300), default="")
     customer_contact: Mapped[str] = mapped_column(String(300), default="")

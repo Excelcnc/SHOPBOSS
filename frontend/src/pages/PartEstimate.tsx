@@ -45,7 +45,7 @@ export default function PartEstimate() {
 
   return (
     <div className="px-6 py-5">
-      <Link to={`/rfq/${id}`} className="mb-2 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {rfq.data.number} · {rfq.data.customer_name}</Link>
+      <Link to={`/rfq/${id}`} className="mb-2 inline-flex items-center gap-1 text-sm text-steel-500 hover:text-navy-700"><ArrowLeft size={14} /> {rfq.data.number || "RFQ"} · {rfq.data.customer_name}</Link>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-semibold">{part.part_number}</h1>{part.revision && <Badge>Rev {part.revision}</Badge>}
         <span className="text-sm text-steel-500">{part.description}</span>

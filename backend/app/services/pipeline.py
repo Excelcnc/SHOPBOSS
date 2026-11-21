@@ -43,10 +43,21 @@ def audit(db: Session, shop_id: str, entity: str, entity_id: str, action: str, d
 
 
 def next_rfq_number(db: Session, shop_id: str) -> str:
+    """Next sequential number for the current year, based on numbers already issued (unnumbered RFQs don't count)."""
     y = datetime.now(timezone.utc).year
-    n = db.scalar(select(Rfq.id).where(Rfq.shop_id == shop_id).order_by(Rfq.created_at.desc()).limit(1))
-    count = len(db.scalars(select(Rfq.id).where(Rfq.shop_id == shop_id)).all())
-    return f"RFQ-{y}-{count + 1:04d}"
+    prefix = f"RFQ-{y}-"
+    issued = db.scalars(select(Rfq.number).where(Rfq.shop_id == shop_id, Rfq.number.like(prefix + "%"))).all()
+    seq = max((int(n[len(prefix):]) for n in issued if n[len(prefix):].isdigit()), default=0)
+    return f"{prefix}{seq + 1:04d}"
+
+
+def assign_rfq_number(db: Session, rfq: Rfq, user_id: str | None = None) -> str:
+    """Give an RFQ its number when the quote is processed. Idempotent: an RFQ keeps the number it already has."""
+    if not rfq.number:
+        rfq.number = next_rfq_number(db, rfq.shop_id)
+        db.flush()
+        audit(db, rfq.shop_id, "rfq", rfq.id, "number_assigned", {"number": rfq.number}, user_id)
+    return rfq.number
 
 
 def add_files(db: Session, rfq: Rfq, files: list[tuple[str, bytes]]):
@@ -76,7 +87,7 @@ def create_rfq_from_email(db: Session, shop_id: str, parsed: ParsedEmail, source
     db.add(em)
     db.flush()
     fields = extract_fields(parsed.subject, parsed.body, parsed.sender_name, parsed.sender_email, [a[0] for a in parsed.attachments])
-    rfq = Rfq(shop_id=shop_id, number=next_rfq_number(db, shop_id), email_id=em.id, extracted=fields,
+    rfq = Rfq(shop_id=shop_id, number="", email_id=em.id, extracted=fields,
               customer_name=str(fields.get("customer_name", {}).get("value", "")), customer_contact=parsed.sender_name,
               customer_email=parsed.sender_email, customer_rfq_no=str(fields.get("customer_rfq_no", {}).get("value", "")),
               due_date=str(fields.get("quote_due", {}).get("value", "")) or None)

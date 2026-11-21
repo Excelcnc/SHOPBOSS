@@ -31,7 +31,7 @@ export default function Queue() {
           <tbody>
             {(list.data || []).map((r: any) => (
               <tr key={r.id} className="cursor-pointer hover:bg-navy-50/50">
-                <td className="td"><Link to={`/rfq/${r.id}`} className="font-mono text-navy-700 hover:underline">{r.number}</Link></td>
+                <td className="td"><Link to={`/rfq/${r.id}`} className="font-mono text-navy-700 hover:underline">{r.number || <span className="font-sans text-xs italic text-steel-500">Unassigned</span>}</Link></td>
                 <td className="td"><div className="font-medium">{r.customer_name || "—"}</div><div className="text-xs text-steel-500">{r.customer_contact}</div></td>
                 <td className="td max-w-[340px]"><Link to={`/rfq/${r.id}`} className="line-clamp-2">{r.subject}</Link>
                   <div className="mt-0.5 flex gap-2 text-xs text-steel-500"><span className="inline-flex items-center gap-0.5"><Paperclip size={11} />{r.attachments}</span>
@@ -66,7 +66,7 @@ function NewRfq({ onClose }: { onClose: () => void }) {
     Object.entries(f.current).forEach(([k, v]) => fd.append(k, v));
     try {
       const r = await api.form("/rfqs", fd);
-      toast(`Created ${r.map((x: any) => x.number).join(", ")}`);
+      toast(r.length > 1 ? `Created ${r.length} RFQs` : "RFQ created");
       onClose(); nav(`/rfq/${r[0].id}`);
     } catch (e: any) { toast(e.message); setBusy(false); }
   };

@@ -116,3 +116,19 @@ def test_lead_time_on_quote(client, samples):
     import fitz
     text = fitz.open(stream=pdf, filetype="pdf")[0].get_text()
     assert "Lead time" in text and "8 weeks, 2 releases" in text
+
+
+def test_rfq_number_assigned_only_when_quoted(client, samples):
+    a = upload(client, samples, ["BRK-20417_RevC.pdf", "BRK-20417_RevC.step"], subject="first", quantities="250")[0]
+    b = upload(client, samples, ["FLG-5520_RevA.dxf"], subject="second")[0]
+    assert a["number"] == "" and b["number"] == ""
+    assert all(r["number"] == "" for r in client.get("/api/rfqs").json())
+    # manual button: numbers are issued in the order quotes are processed, and re-clicking keeps the number
+    nb = client.post(f"/api/rfqs/{b['id']}/assign-number").json()["number"]
+    assert nb.startswith("RFQ-") and nb.endswith("-0001")
+    assert client.post(f"/api/rfqs/{b['id']}/assign-number").json()["number"] == nb
+    # finalizing an unnumbered RFQ assigns the next number automatically
+    rfq = client.get(f"/api/rfqs/{a['id']}").json()
+    part = next(p for p in rfq["parts"] if p["kind"] == "machined")
+    client.post(f"/api/rfqs/{a['id']}/finalize", json={"lines": [{"version_id": part["versions"][0]["id"], "qty": 250}]})
+    assert client.get(f"/api/rfqs/{a['id']}").json()["number"].endswith("-0002")
